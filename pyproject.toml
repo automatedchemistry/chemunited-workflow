@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "chemunited-workflow"
+version = "0.1.0"
+description = "Conditional NetworkX-based workflow execution with loopbacks and parallel branches."
+requires-python = ">=3.11"
+license = { file = "LICENSE" }
+dependencies = [
+    "networkx>=3.2",
+    "pydantic>=2.0",
+    "loguru>=0.7",
+    "rich>=13.0",
+]
+
+[tool.setuptools]
+packages = ["workflow"]
