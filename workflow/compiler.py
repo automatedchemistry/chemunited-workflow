@@ -61,6 +61,7 @@ def _validate_node(node_id: str, attrs: dict[str, Any]) -> None:
         method=attrs.get("method"),
         label=attrs.get("label"),
         description=attrs.get("description"),
+        position=attrs.get("position"),
     )
 
     node_config = attrs.get("node_config")
