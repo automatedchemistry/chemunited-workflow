@@ -30,6 +30,7 @@ class WorkflowNodeSpec(BaseModel):
     method: str
     label: str | None = None
     description: str | None = None
+    position: tuple[float, float] | None = None
 
 
 class WorkflowEdgeSpec(BaseModel):
