@@ -11,7 +11,7 @@ from pydantic import BaseModel, ConfigDict
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from workflow import (
+from chemunited_workflow import (
     NodeConfig,
     NodeExecutionContext,
     Process,

@@ -16,4 +16,4 @@ dependencies = [
 ]
 
 [tool.setuptools]
-packages = ["workflow"]
+packages = ["chemunited_workflow"]
