@@ -1,24 +1,30 @@
 """Public API for the workflow package."""
 
+from .clients import BaseClient, ComponentClient
 from .compiler import compile_workflow
 from .enums import NodeState, WorkflowEventType
+from .exceptions import ConcurrentClientAccessError
 from .executor import WorkflowExecutor
-from .monitoring import RichWorkflowMonitor
 from .models import (
     LoopBackSpec,
     NodeConfig,
     NodeExecutionContext,
     NodeRuntime,
-    WorkflowExecutionEvent,
     WorkflowEdgeSpec,
+    WorkflowExecutionEvent,
     WorkflowNodeSpec,
     WorkflowResult,
 )
+from .platform import Platform
 from .process import Process
-from .terminal import TerminalWorkflowObserver, configure_terminal_logging
+from .terminal import WorkflowLogger, configure_terminal_logging, create_run_log_path
 
 __all__ = [
     "Process",
+    "Platform",
+    "BaseClient",
+    "ComponentClient",
+    "ConcurrentClientAccessError",
     "WorkflowExecutor",
     "compile_workflow",
     "NodeConfig",
@@ -31,7 +37,7 @@ __all__ = [
     "NodeState",
     "WorkflowEventType",
     "WorkflowExecutionEvent",
-    "RichWorkflowMonitor",
-    "TerminalWorkflowObserver",
+    "WorkflowLogger",
     "configure_terminal_logging",
+    "create_run_log_path",
 ]

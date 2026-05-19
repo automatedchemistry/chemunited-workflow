@@ -1,5 +1,5 @@
 """Backward-compatible monitoring exports."""
 
-from .terminal import RichWorkflowMonitor, TerminalWorkflowObserver, configure_terminal_logging
+from .terminal import WorkflowLogger, configure_terminal_logging
 
-__all__ = ["TerminalWorkflowObserver", "RichWorkflowMonitor", "configure_terminal_logging"]
+__all__ = ["WorkflowLogger", "configure_terminal_logging"]

@@ -95,6 +95,24 @@ class WorkflowResult:
     node_runtime: dict[tuple[str, int], NodeRuntime]
     errors: dict[tuple[str, int], Exception]
 
+    def model_dump(self) -> dict:
+        return {
+            "node_state": {f"{k[0]}:{k[1]}": str(v) for k, v in self.node_state.items()},
+            "node_result": {f"{k[0]}:{k[1]}": v for k, v in self.node_result.items()},
+            "node_runtime": {
+                f"{k[0]}:{k[1]}": {
+                    "status_message": v.status_message,
+                    "result": v.result,
+                    "error": str(v.error) if v.error else None,
+                    "started_at": v.started_at,
+                    "finished_at": v.finished_at,
+                    "local_data": v.local_data,
+                }
+                for k, v in self.node_runtime.items()
+            },
+            "errors": {f"{k[0]}:{k[1]}": str(v) for k, v in self.errors.items()},
+        }
+
 
 @dataclass(slots=True)
 class WorkflowExecutionEvent:
@@ -111,6 +129,25 @@ class WorkflowExecutionEvent:
     active_predecessor_count: int | None = None
     completed_predecessor_count: int | None = None
     timestamp: float = field(default_factory=time)
+
+    def model_dump(self) -> dict:
+        return {
+            "event_type": str(self.event_type),
+            "message": self.message,
+            "node_key": list(self.node_key) if self.node_key else None,
+            "state": str(self.state) if self.state else None,
+            "result": self.result,
+            "method": self.method,
+            "source": self.source,
+            "target": self.target,
+            "active_predecessor_count": self.active_predecessor_count,
+            "completed_predecessor_count": self.completed_predecessor_count,
+            "timestamp": self.timestamp,
+        }
+
+    def model_dump_json(self) -> str:
+        import json as _json
+        return _json.dumps(self.model_dump())
 
 
 @dataclass(slots=True)
