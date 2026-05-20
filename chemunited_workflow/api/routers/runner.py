@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
@@ -112,6 +113,34 @@ async def stream_run(
         yield f'data: {{"state": "{rec.state.value}"}}\n\n'
 
     return StreamingResponse(generate(), media_type="text/event-stream")
+
+
+@router.get("/pool")
+async def drain_pool(svc: RunnerService = Depends(get_runner_service)):
+    """Return all pending device commands and delete their files.
+
+    Reads every ``*.jsonl`` file under ``log/pool/``, collects every line,
+    deletes the files, and returns the full list. Returns an empty list when
+    no commands have been issued since the last poll.
+
+    Poll this endpoint at a comfortable interval (e.g. every 500 ms) while a
+    run is active to display live device activity in the UI.
+    """
+    pool_dir = svc._project_dir / "log" / "pool"
+    if not pool_dir.exists():
+        return []
+
+    commands = []
+    for f in pool_dir.glob("*.jsonl"):
+        try:
+            for line in f.read_text(encoding="utf-8").splitlines():
+                line = line.strip()
+                if line:
+                    commands.append(json.loads(line))
+            f.unlink()
+        except (OSError, json.JSONDecodeError):
+            pass
+    return commands
 
 
 @router.delete("/{run_id}", status_code=204)

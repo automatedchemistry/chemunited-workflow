@@ -141,3 +141,59 @@ def test_client_usable_after_failed_concurrent_call():
         rsps.add(resp_lib.GET, f"{BASE_URL}/x", status=200, body=b"")
         r = client.get("/x")
     assert r.status_code == 200
+
+
+# ── _write_json_log ───────────────────────────────────────────────────────────
+
+def test_write_json_log_none_creates_no_file(tmp_path):
+    client = ComponentClient(BASE_URL, pool_json_log=None)
+    client._write_json_log({"method": "GET", "command": "/x", "component": "pump", "params": None})
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_write_json_log_writes_expected_keys(tmp_path):
+    log_path = tmp_path / "pump.jsonl"
+    client = ComponentClient(BASE_URL, pool_json_log=log_path)
+    client._write_json_log({"method": "PUT", "command": "/dose", "component": "pump", "params": {"volume": 5}})
+    import json
+    record = json.loads(log_path.read_text(encoding="utf-8").strip())
+    assert record["method"] == "PUT"
+    assert record["command"] == "/dose"
+    assert record["component"] == "pump"
+    assert record["params"] == {"volume": 5}
+
+
+def test_write_json_log_appends_multiple_lines(tmp_path):
+    import json
+    log_path = tmp_path / "pump.jsonl"
+    client = ComponentClient(BASE_URL, pool_json_log=log_path)
+    client._write_json_log({"method": "PUT", "command": "/a", "component": "pump", "params": None})
+    client._write_json_log({"method": "GET", "command": "/b", "component": "pump", "params": None})
+    lines = [l for l in log_path.read_text(encoding="utf-8").splitlines() if l.strip()]
+    assert len(lines) == 2
+    assert json.loads(lines[0])["command"] == "/a"
+    assert json.loads(lines[1])["command"] == "/b"
+
+
+def test_write_json_log_creates_parent_dir(tmp_path):
+    log_path = tmp_path / "nested" / "deep" / "pump.jsonl"
+    client = ComponentClient(BASE_URL, pool_json_log=log_path)
+    client._write_json_log({"method": "GET", "command": "/x", "component": "pump", "params": None})
+    assert log_path.exists()
+
+
+def test_write_json_log_called_before_request_dry_run(tmp_path):
+    log_path = tmp_path / "pump.jsonl"
+    client = ComponentClient(BASE_URL, dry_run=True, pool_json_log=log_path)
+    client.get("/x")
+    assert log_path.exists()
+
+
+def test_write_json_log_written_in_dry_run(tmp_path):
+    import json
+    log_path = tmp_path / "pump.jsonl"
+    client = ComponentClient(BASE_URL, dry_run=True, pool_json_log=log_path)
+    client.put("/dose", volume=3)
+    record = json.loads(log_path.read_text(encoding="utf-8").strip())
+    assert record["method"] == "PUT"
+    assert record["command"] == "/dose"

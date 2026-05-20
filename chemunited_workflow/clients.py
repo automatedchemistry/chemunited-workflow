@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import json
 import threading
+import time
+from collections.abc import Mapping
 from pathlib import Path
+from typing import Any
 
 import requests
 from loguru import logger
 from pydantic import AnyHttpUrl
-from typing import Any
 
 from .exceptions import ConcurrentClientAccessError
 
@@ -155,7 +157,8 @@ class ComponentClient(BaseClient):
         if self.pool_json_log is None:
             return
         self.pool_json_log.parent.mkdir(parents=True, exist_ok=True)
-        self.pool_json_log.write_text(json.dumps(data))
+        with self.pool_json_log.open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps(data) + "\n")
 
     def _request(self, method: str, path: str, **kwargs) -> requests.Response:
         if not self._access_lock.acquire(blocking=False):
@@ -165,12 +168,119 @@ class ComponentClient(BaseClient):
                 "at a time — check your workflow graph for nodes that share the same device."
             )
         try:
-            self._write_json_log({
-                "method": method,
-                "command": path,
-                "component": self.component_ui,
-                "params": kwargs.get('params')
-            })
             return super()._request(method, path, **kwargs)
         finally:
             self._access_lock.release()
+
+    @staticmethod
+    def _merge_query_params(
+        params: Any | None,
+        command_params: dict[str, Any],
+    ) -> Any | None:
+        if params is None:
+            return command_params or None
+        if not command_params:
+            return params
+        if not isinstance(params, Mapping):
+            raise TypeError(
+                "ComponentClient command keyword params can only be combined with "
+                "mapping-style params."
+            )
+        return {**params, **command_params}
+
+    def put(
+        self,
+        path: str,
+        *,
+        params: Any | None = None,
+        json: Any | None = None,
+        wait_time: float = 0.0,
+        wait_feedback_status: bool = False,
+        feedback_status_command: str = "",
+        feedback_answer: str = "true",
+        **command_params: Any,
+    ) -> requests.Response:
+        query_params = self._merge_query_params(params, command_params)
+        self._write_json_log(
+            {
+                "component": self.component_ui,
+                "method": "PUT",
+                "command": path,
+                "params": query_params,
+                "wait_time": wait_time,
+                "wait_feedback_status": wait_feedback_status,
+                "feedback_status_command": feedback_status_command,
+                "feedback_answer": feedback_answer,
+            }
+        )
+        resp = super().put(path, params=query_params, json=json)
+        self._execute_post_command(
+            wait_time,
+            wait_feedback_status,
+            feedback_status_command,
+            feedback_answer,
+        )
+        return resp
+
+    def get(
+        self,
+        path: str,
+        *,
+        params: Any | None = None,
+        wait_time: float = 0.0,
+        wait_feedback_status: bool = False,
+        feedback_status_command: str = "",
+        feedback_answer: str = "true",
+        **command_params: Any,
+    ) -> requests.Response:
+        query_params = self._merge_query_params(params, command_params)
+        self._write_json_log(
+            {
+                "component": self.component_ui,
+                "method": "GET",
+                "command": path,
+                "params": query_params,
+                "wait_time": wait_time,
+                "wait_feedback_status": wait_feedback_status,
+                "feedback_status_command": feedback_status_command,
+                "feedback_answer": feedback_answer,
+            }
+        )
+        resp = super().get(path, params=query_params)
+        self._execute_post_command(
+            wait_time,
+            wait_feedback_status,
+            feedback_status_command,
+            feedback_answer,
+        )
+        return resp
+
+    def _execute_post_command(
+        self,
+        wait_time: float,
+        wait_feedback_status: bool,
+        feedback_status_command: str,
+        feedback_answer: str,
+    ) -> None:
+        if wait_time > 0:
+            time.sleep(wait_time)
+        if wait_feedback_status and feedback_status_command:
+            self._poll_feedback(feedback_status_command, feedback_answer)
+
+    def _poll_feedback(
+        self,
+        status_command: str,
+        expected: str,
+        *,
+        interval: float = 1.0,
+        timeout: float = 10.0,
+    ) -> None:
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            resp = super().get(status_command)
+            if resp.text.strip() == expected:
+                return
+            time.sleep(interval)
+        raise TimeoutError(
+            f"Feedback '{status_command}' did not return '{expected}' within {timeout}s"
+        )

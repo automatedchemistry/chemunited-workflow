@@ -4,8 +4,8 @@
 from __future__ import annotations
 
 import networkx as nx
-from pydantic import BaseModel, ConfigDict
-from typing import TYPE_CHECKING
+from pydantic import BaseModel, ConfigDict, Field
+from typing import Annotated
 from loguru import logger
 from time import sleep
 
@@ -14,11 +14,9 @@ from chemunited_workflow import (
     Process,
     WorkflowEdgeSpec,
     WorkflowNodeSpec,
+    ChemUnitQuantity,
+    ChemQuantityValidator,
 )
-
-if TYPE_CHECKING:
-    from .main_parameters import MainParameter
-
 
 # ── Process configuration ──────────────────────────────────────────────────────
 
@@ -186,7 +184,8 @@ class CustomProcess(Process[ProcessConfig]):
     def command_1(self, ctx: NodeExecutionContext) -> bool:
         self.platform["AS injection"].put(
             "position",
-            params={"connect": "[[1, 2]]", "disconnect": ""},
+            connect="[[1, 2]]",
+            disconnect="",
         )
         return True
 

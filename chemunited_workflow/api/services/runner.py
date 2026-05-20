@@ -69,7 +69,15 @@ class RunnerService:
             encoding="utf-8",
         )
         try:
-            platform = Platform.from_project_dir(self._project_dir, dry_run=dry_run)
+            pool_dir = self._project_dir / "log" / "pool"
+            if pool_dir.exists():
+                for f in pool_dir.glob("*.jsonl"):
+                    f.unlink(missing_ok=True)
+            platform = Platform.from_project_dir(
+                self._project_dir,
+                dry_run=dry_run,
+                log_dir=self._project_dir / "log",
+            )
             for process_name, process_index in sequence:
                 if self._run_store.get(run_id).state == RunState.CANCELLED:
                     return

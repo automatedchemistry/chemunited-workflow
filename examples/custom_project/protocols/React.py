@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import networkx as nx
 from pydantic import BaseModel, ConfigDict, Field
-from typing import TYPE_CHECKING, Annotated
+from typing import Annotated
 from loguru import logger
 
 #from chemunited.core.utils import ChemQuantityValidator, ChemUnitQuantity
@@ -16,9 +16,6 @@ from chemunited_workflow import (
     WorkflowEdgeSpec,
     WorkflowNodeSpec,
 )
-
-if TYPE_CHECKING:
-    from .main_parameters import MainParameter
 
 
 # ── Process configuration ──────────────────────────────────────────────────────
@@ -36,6 +33,7 @@ class ProcessConfig(BaseModel):
 
 
 class CustomProcess(Process[ProcessConfig]):
+    
     """User-defined workflow process."""
 
     def build_workflow(self) -> nx.DiGraph:
@@ -241,29 +239,61 @@ class CustomProcess(Process[ProcessConfig]):
 
     def script_1(self, ctx: NodeExecutionContext) -> bool:
         ctx.runtime.status_message = "Script 1 ran."
+        self.platform["AS pump"].put("infuse", volume="10 ml", rate="50 ml/min")
         return True
 
     def script_2(self, ctx: NodeExecutionContext) -> bool:
         ctx.runtime.status_message = "Script 2 ran."
+        self.platform["Quencher pump"].put("infuse", volume="5 ml", rate="15 ml/min")
         return True
 
     def script_3(self, ctx: NodeExecutionContext) -> bool:
         ctx.runtime.status_message = "Script 3 ran."
+        self.platform["Reagent pump"].put("infuse", rate="20 ml/min", volume="5 ml", wait_time=25)
         return True
 
     def script_4(self, ctx: NodeExecutionContext) -> bool:
         ctx.runtime.status_message = "Script 4 ran."
+        self.platform["Disposal valve"].put("position", connect="[[1, 2]]")
+        self.platform["Relay"].put("multiple_channel", values="02000000")
         return True
 
     def script_5(self, ctx: NodeExecutionContext) -> bool:
         ctx.runtime.status_message = "Script 5 ran."
+        self.platform["AS Distribution valve"].put("position", connect="[[0, 2]]")
+        self.platform["AS pump"].put("infuse", volume="10 ml", rate="50 ml/min", wait_time=12)
+        self.platform["gantry"].put("set_x_position", position="1")
+        self.platform["gantry"].put("set_y_position", position="A")
+        self.platform["gantry"].put("set_z_position", position="DOWN")
+        # platform["AS SP valve"].put("position", connect="[[2, 3]]")
+        self.platform["AS Distribution valve"].put("position", connect="[[0, 1]]")
+        self.platform["AS injection"].put("position", connect="[[4, 5]]")
+        self.platform["AS pump"].put("withdraw", volume="10 ml", rate="50 ml/min", wait_time=12)
+        self.platform["AS injection"].put("position", connect="[[5, 6]]")
         return True
 
     def script_6(self, ctx: NodeExecutionContext) -> bool:
         ctx.runtime.status_message = "Script 6 ran."
+        self.platform["Quencher valve"].put("position", connect="[[0, 4]]")
+        self.platform["Quencher pump"].put("infuse", volume="10 ml", rate="25 ml/min", wait_time=24)
+        self.platform["Quencher valve"].put("position", connect="[[0, 3]]")
+        self.platform["Quencher pump"].put("withdraw", volume="5 ml", rate="25 ml/min", wait_time=12)
+        self.platform["Quencher valve"].put("position", connect="[[0, 5]]")
         return True
 
     def script_7(self, ctx: NodeExecutionContext) -> bool:
         ctx.runtime.status_message = "Script 7 ran."
+        self.platform["Reagent Valve"].put("position", connect="[[0, 1]]")
+        self.platform["Reagent pump"].put(
+            "withdraw", 
+            volume="10 ml", 
+            rate="25 ml/min",
+            wait_time=25, 
+            wait_feedback_status=True,
+            feedback_status_command="is-pumping",
+            feedback_answer="false"
+        )
+        self.platform["Reagent Valve"].put("position", connect="[[0, 5]]")
+        self.platform["Relay"].put("power-on", channel="1")
         return True
 

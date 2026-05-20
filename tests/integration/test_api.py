@@ -11,7 +11,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from chemunited_workflow.api import create_api
-from tests.helpers import make_project_tree, write_source, MINIMAL_PROCESS_SRC, MAIN_PARAMETERS_SRC
+from tests.helpers import make_project_tree
 
 FIXTURES = Path(__file__).parent.parent / "fixtures"
 
@@ -227,3 +227,64 @@ def test_read_log_with_tail(client):
 def test_read_missing_log(client):
     r = client.get("/logs/missing.log")
     assert r.status_code == 404
+
+
+# ── /run/pool ─────────────────────────────────────────────────────────────────
+
+def test_pool_no_dir_returns_empty(client):
+    r = client.get("/run/pool")
+    assert r.status_code == 200
+    assert r.json() == []
+
+
+def test_pool_returns_commands_and_deletes_file(client, project):
+    pool_dir = project["tmp_path"] / "log" / "pool"
+    pool_dir.mkdir(parents=True, exist_ok=True)
+    (pool_dir / "pump.jsonl").write_text(
+        '{"method": "PUT", "command": "/dose", "component": "pump", "params": null}\n',
+        encoding="utf-8",
+    )
+    r = client.get("/run/pool")
+    assert r.status_code == 200
+    data = r.json()
+    assert len(data) == 1
+    assert data[0]["component"] == "pump"
+    assert not (pool_dir / "pump.jsonl").exists()
+
+
+def test_pool_aggregates_multiple_components(client, project):
+    pool_dir = project["tmp_path"] / "log" / "pool"
+    pool_dir.mkdir(parents=True, exist_ok=True)
+    (pool_dir / "pump.jsonl").write_text(
+        '{"method": "PUT", "command": "/dose", "component": "pump", "params": null}\n',
+        encoding="utf-8",
+    )
+    (pool_dir / "valve.jsonl").write_text(
+        '{"method": "PUT", "command": "/position", "component": "valve", "params": null}\n',
+        encoding="utf-8",
+    )
+    r = client.get("/run/pool")
+    assert r.status_code == 200
+    components = {cmd["component"] for cmd in r.json()}
+    assert components == {"pump", "valve"}
+
+
+def test_pool_skips_invalid_json_gracefully(client, project):
+    pool_dir = project["tmp_path"] / "log" / "pool"
+    pool_dir.mkdir(parents=True, exist_ok=True)
+    (pool_dir / "broken.jsonl").write_text("not-valid-json\n", encoding="utf-8")
+    r = client.get("/run/pool")
+    assert r.status_code == 200
+
+
+def test_pool_second_poll_returns_empty(client, project):
+    pool_dir = project["tmp_path"] / "log" / "pool"
+    pool_dir.mkdir(parents=True, exist_ok=True)
+    (pool_dir / "pump.jsonl").write_text(
+        '{"method": "PUT", "command": "/dose", "component": "pump", "params": null}\n',
+        encoding="utf-8",
+    )
+    client.get("/run/pool")
+    r = client.get("/run/pool")
+    assert r.status_code == 200
+    assert r.json() == []

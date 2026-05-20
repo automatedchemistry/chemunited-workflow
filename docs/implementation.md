@@ -2527,3 +2527,309 @@ test = [
 | `threading.Barrier` | Synchronise concurrent test threads | Deterministic race — avoids timing-dependent failures |
 | Short poll loop for run status | `time.sleep(0.2)` + retry up to 2 s | Background thread needs time; busy-wait is fragile |
 | Test dependencies separate | `[project.optional-dependencies] test` | Not installed in production; installable with `pip install .[test]` |
+
+
+# Step 06 — `pool_json_log` Command Visibility
+
+## Context
+
+This document describes a single, self-contained change to `chemunited-workflow`.
+Read the existing `update_plan.md` (Steps 01–05) before starting — this step builds
+directly on the classes defined there.
+
+---
+
+## Goal
+
+Give the web client real-time visibility into which HTTP commands are being sent to
+physical devices while a protocol is running.
+
+The mechanism is intentionally simple:
+
+1. Every `ComponentClient` holds a path (`pool_json_log`). Each time `_request` is
+   called — while the concurrency lock is held — it overwrites that file with the
+   metadata of the current command.
+2. A new API endpoint reads the file, deletes it, and returns the content.
+3. The client polls this endpoint to see the most recent command.
+
+This is a "last-command" indicator, not a full audit log. The file is ephemeral;
+the log folder already handles durable logging.
+
+---
+
+## 1. Changes to `ComponentClient` (`chemunited_workflow/clients.py`)
+
+### 1.1 New constructor parameters
+
+Add two keyword-only parameters after `dry_run`:
+
+| Parameter | Type | Default | Purpose |
+|---|---|---|---|
+| `component_ui` | `str` | `"undefined"` | Human-readable label shown in the UI (e.g. `"AS pump"`) |
+| `pool_json_log` | `Path \| None` | `None` | Path of the command file; `None` disables writing |
+
+```python
+class ComponentClient(BaseClient):
+    def __init__(
+        self,
+        url: str | AnyHttpUrl,
+        *,
+        component_ui: str = "undefined",
+        dry_run: bool = False,
+        pool_json_log: Path | None = None,
+    ) -> None:
+        super().__init__(url, dry_run=dry_run)
+        self._access_lock = threading.Lock()
+        self.component_ui = component_ui
+        self.pool_json_log = pool_json_log
+```
+
+### 1.2 `_write_json_log`
+
+Appends one JSON line (JSONL format) to `self.pool_json_log`.
+Returns silently when `pool_json_log` is `None`.
+
+```python
+def _write_json_log(self, data: dict[str, Any]) -> None:
+    if self.pool_json_log is None:
+        return
+    self.pool_json_log.parent.mkdir(parents=True, exist_ok=True)
+    with self.pool_json_log.open("a", encoding="utf-8") as f:
+        f.write(json.dumps(data) + "\n")
+```
+
+**Why JSONL and not overwrite (`write_text`)?**
+A workflow with parallel branches can send multiple commands to different devices
+between two client polls. With overwrite semantics the client would see only the
+last command and silently miss the others. Appending one line per command means
+the drain endpoint returns *every* command issued since the previous poll, in order.
+
+**Thread safety note:** `_write_json_log` is always called while `self._access_lock`
+is held, so writes from the *same* `ComponentClient` are serialised. Multiple
+`ComponentClient` instances that share the *same* `pool_json_log` path can still
+race at the `open("a")` level — see §3 for how `Platform` avoids this by giving
+each component its own file.
+
+### 1.3 Updated `_request`
+
+Call `_write_json_log` **before** `super()._request(...)` so the file is written even
+if the request fails. The write happens inside the lock, so the device is reserved
+for the duration of the write + call.
+
+```python
+def _request(self, method: str, path: str, **kwargs) -> requests.Response:
+    if not self._access_lock.acquire(blocking=False):
+        raise ConcurrentClientAccessError(
+            f"{type(self).__name__}(url={self.base_url!r}) was accessed from two threads "
+            "simultaneously. Each ComponentClient must be used by only one workflow node "
+            "at a time — check your workflow graph for nodes that share the same device."
+        )
+    try:
+        self._write_json_log({
+            "method": method,
+            "command": path,
+            "component": self.component_ui,
+            "params": kwargs.get("params"),
+        })
+        return super()._request(method, path, **kwargs)
+    finally:
+        self._access_lock.release()
+```
+
+---
+
+## 2. Changes to `Platform` (`chemunited_workflow/platform.py`)
+
+### 2.1 `from_connectivity` — new `log_dir` parameter
+
+`from_connectivity` accepts an optional `log_dir: Path | None = None` argument.
+When provided, each `ComponentClient` receives its own log file:
+
+```
+{log_dir}/pool/{component_name}.json
+```
+
+Using per-component filenames means no two clients ever share the same path,
+eliminating the cross-client race entirely.
+
+```python
+@classmethod
+def from_connectivity(
+    cls,
+    path: Path | str,
+    *,
+    dry_run: bool = False,
+    log_dir: Path | None = None,
+) -> "Platform":
+    data = json.loads(Path(path).read_text(encoding="utf-8"))
+    server_url = data["server_url"].rstrip("/")
+    components = {}
+    for assoc in data["associations"]:
+        component_url = assoc.get("component_url", "").strip()
+        if not component_url:
+            continue
+        name = assoc["component"]
+        pool_json_log = (
+            log_dir / "pool" / f"{name}.jsonl"
+            if log_dir is not None
+            else None
+        )
+        components[name] = ComponentClient(
+            f"{server_url}/{component_url}",
+            component_ui=name,
+            dry_run=dry_run,
+            pool_json_log=pool_json_log,
+        )
+    return cls(components)
+```
+
+### 2.2 `from_project_dir` — forward `log_dir`
+
+```python
+@classmethod
+def from_project_dir(
+    cls,
+    project_dir: Path | str,
+    *,
+    dry_run: bool = False,
+    log_dir: Path | None = None,
+) -> "Platform":
+    return cls.from_connectivity(
+        Path(project_dir) / "connectivity" / "associations.json",
+        dry_run=dry_run,
+        log_dir=log_dir,
+    )
+```
+
+---
+
+## 3. Changes to `RunnerService` (`chemunited_workflow/api/services/runner.py`)
+
+Pass the project `log` directory when constructing the platform:
+
+```python
+def _execute(self, run_id, snapshot_filename, sequence, data, dry_run: bool) -> None:
+    try:
+        platform = Platform.from_project_dir(
+            self._project_dir,
+            dry_run=dry_run,
+            log_dir=self._project_dir / "log",   # ← new
+        )
+        ...
+```
+
+No other change to `RunnerService` is needed.
+
+---
+
+## 4. New API endpoint (`chemunited_workflow/api/routers/runner.py`)
+
+Add `GET /run/pool` to `runner.py`. This endpoint does **not** require a `run_id`
+because the pool files are shared across the whole project log directory — any client
+(of any run) writes to the same `log/pool/` folder.
+
+```python
+@router.get("/pool")
+async def drain_pool(
+    svc: RunnerService = Depends(get_runner_service),
+):
+    """Return all pending device commands and delete their files.
+
+    Reads every ``*.jsonl`` file under ``log/pool/``, collects every line,
+    deletes the files, and returns the full list.  Returns an empty list when
+    no commands have been issued since the last poll.
+
+    Poll this endpoint at a comfortable interval (e.g. every 500 ms) while a
+    run is active to display live device activity in the UI.
+    """
+    pool_dir = svc._project_dir / "log" / "pool"
+    if not pool_dir.exists():
+        return []
+
+    commands = []
+    for f in pool_dir.glob("*.jsonl"):
+        try:
+            for line in f.read_text(encoding="utf-8").splitlines():
+                line = line.strip()
+                if line:
+                    commands.append(json.loads(line))
+            f.unlink()
+        except (OSError, json.JSONDecodeError):
+            pass   # file already consumed by a concurrent poll — skip silently
+
+    return commands
+```
+
+**Why `GET /run/pool` instead of `GET /run/{run_id}/pool`?**
+The files are keyed by component name, not by run. There is at most one active run at
+any time (enforced by `RunStore.active_run_id`), so a run-agnostic endpoint is
+correct and simpler for the client to call.
+
+---
+
+## 5. Dry-run behaviour
+
+In dry-run mode, `BaseClient._request` returns a synthetic response without calling
+`self._session.request`. The `_write_json_log` call happens **before**
+`super()._request(...)` and is **not** inside the dry-run branch, so the pool file
+is written even during simulated runs. This is intentional: the UI can confirm that
+the workflow is routing correctly by watching which commands would have been sent.
+
+No code change is needed for this — it follows automatically from the call order in
+§1.3.
+
+---
+
+## 6. Files to modify
+
+| File | Change |
+|---|---|
+| `chemunited_workflow/clients.py` | Add `component_ui`, `pool_json_log` to `ComponentClient.__init__`; add `_write_json_log`; call it in `_request` before `super()._request` |
+| `chemunited_workflow/platform.py` | Add `log_dir` param to `from_connectivity` and `from_project_dir`; pass `component_ui` and `pool_json_log` to each `ComponentClient` |
+| `chemunited_workflow/api/services/runner.py` | Pass `log_dir=self._project_dir / "log"` to `Platform.from_project_dir` |
+| `chemunited_workflow/api/routers/runner.py` | Add `GET /run/pool` endpoint |
+
+No changes to `BaseClient`, `Process`, `RunStore`, schemas, or MCP tools.
+
+---
+
+## 7. Tests to add (`tests/unit/test_clients.py` and `tests/integration/test_api.py`)
+
+### Unit tests — `ComponentClient._write_json_log`
+
+| Test | Assertion |
+|---|---|
+| `pool_json_log=None` — no file created | `_write_json_log` is a no-op |
+| `pool_json_log` set — file written with correct keys | `method`, `command`, `component`, `params` present |
+| Two calls append two lines, not overwrite | File contains both commands in order |
+| Parent directory created automatically | `mkdir(parents=True)` called |
+| `_write_json_log` called before `super()._request` | Mock `super()._request`; assert file exists before mock runs |
+| Dry-run: file is still written | Pool file appears even when `dry_run=True` |
+
+### Integration test — `GET /run/pool`
+
+| Test | Assertion |
+|---|---|
+| No `log/pool/` dir → `[]` | Missing directory handled gracefully |
+| One `.json` file in `log/pool/` → returned and deleted | Drain works |
+| Two `.json` files → both returned | Multiple components aggregated |
+| File deleted between write and read → skipped silently | `OSError` on `unlink` does not raise 500 |
+| Second poll → `[]` | Files are not re-read |
+
+### Integrate the examples\custom_project_client.ipynb
+
+In the step 5 - integrate the approach built to consume the jsonl log files.
+
+---
+
+## 8. Design decisions
+
+| Decision | Choice | Reason |
+|---|---|---|
+| Write timing | Before `super()._request` | Captures intent; file exists even if request fails |
+| File per component | `pool/{component_name}.jsonl` | Eliminates cross-client file races without a global lock |
+| Append on each call | `open("a")` + JSONL | Parallel branches issue multiple commands between polls; overwrite would silently drop all but the last |
+| Endpoint granularity | `GET /run/pool` (no `run_id`) | Pool is keyed by component, not run; at most one active run at a time |
+| `component_ui` default | `"undefined"` | Safe fallback; never silently omits the field |
+| `log_dir` default | `None` (disables writing) | Backward compatible; tests that do not want pool files pass nothing |
+| Dry-run pool files | Written | Lets the UI validate routing without a real device |

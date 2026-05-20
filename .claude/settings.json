@@ -16,7 +16,11 @@
       "Bash(.venv/Scripts/python -m pytest tests/unit/test_process_parameters.py -v)",
       "Bash(.venv/Scripts/python -m pytest tests/integration/test_api.py -v)",
       "Bash(.venv/Scripts/python -m pytest tests/integration/test_dry_run.py -v)",
-      "Bash(.venv/Scripts/python -m pytest tests/ -q)"
+      "Bash(.venv/Scripts/python -m pytest tests/ -q)",
+      "Bash(python -c ' *)",
+      "Bash(.venv\\\\Scripts\\\\python -m pytest tests/unit/test_clients.py tests/integration/test_api.py -v --tb=short)",
+      "Bash(.venv/Scripts/python -m pytest tests/unit/test_clients.py tests/integration/test_api.py -v --tb=short)",
+      "Bash(python -m pytest tests/unit/test_clients.py -v)"
     ]
   }
 }

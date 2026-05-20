@@ -35,12 +35,19 @@ class Platform(Mapping[str, ComponentClient]):
 
     @classmethod
     def from_connectivity(
-        cls, path: Path | str, *, dry_run: bool = False
+        cls,
+        path: Path | str,
+        *,
+        dry_run: bool = False,
+        log_dir: Path | None = None,
     ) -> "Platform":
         """Build a Platform from a connectivity/associations.json file.
 
         Entries with an empty ``component_url`` are silently skipped — they
         represent devices that exist physically but are not yet mapped.
+
+        When ``log_dir`` is provided each component gets its own JSONL file at
+        ``{log_dir}/pool/{component_name}.jsonl`` for live command visibility.
 
         Raises
         ------
@@ -53,24 +60,35 @@ class Platform(Mapping[str, ComponentClient]):
         """
         data = json.loads(Path(path).read_text(encoding="utf-8"))
         server_url = data["server_url"].rstrip("/")
-        components = {
-            assoc["component"]: ComponentClient(
-                url=f"{server_url}/{assoc['component_url']}",
-                component_ui=assoc["component"],
-                dry_run=dry_run,
-                pool_json_log=Path(path).parent.parent / "log" / f"__pool_{assoc['component']}.json",
+        components = {}
+        for assoc in data["associations"]:
+            if not assoc.get("component_url", "").strip():
+                continue
+            name = assoc["component"]
+            pool_json_log = (
+                Path(log_dir) / "pool" / f"{name}.jsonl"
+                if log_dir is not None
+                else None
             )
-            for assoc in data["associations"]
-            if assoc.get("component_url", "").strip()
-        }
+            components[name] = ComponentClient(
+                url=f"{server_url}/{assoc['component_url']}",
+                component_ui=name,
+                dry_run=dry_run,
+                pool_json_log=pool_json_log,
+            )
         return cls(components)
 
     @classmethod
     def from_project_dir(
-        cls, project_dir: Path | str, *, dry_run: bool = False
+        cls,
+        project_dir: Path | str,
+        *,
+        dry_run: bool = False,
+        log_dir: Path | None = None,
     ) -> "Platform":
         """Shorthand: load from ``{project_dir}/connectivity/associations.json``."""
         return cls.from_connectivity(
             Path(project_dir) / "connectivity" / "associations.json",
             dry_run=dry_run,
+            log_dir=log_dir,
         )
