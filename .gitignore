@@ -211,3 +211,6 @@ __marimo__/
 
 # sim-test
 .flowchem-sim
+
+# complete
+.claude
