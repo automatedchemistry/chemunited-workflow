@@ -20,7 +20,9 @@
       "Bash(python -c ' *)",
       "Bash(.venv\\\\Scripts\\\\python -m pytest tests/unit/test_clients.py tests/integration/test_api.py -v --tb=short)",
       "Bash(.venv/Scripts/python -m pytest tests/unit/test_clients.py tests/integration/test_api.py -v --tb=short)",
-      "Bash(python -m pytest tests/unit/test_clients.py -v)"
+      "Bash(python -m pytest tests/unit/test_clients.py -v)",
+      "Bash(grep -E \"\\(^[^/]*\\\\.py$|__init__|main|cli\\)\")",
+      "Bash(python -c \"import sys; print\\(f'Python {sys.version}'\\)\")"
     ]
   }
 }
