@@ -127,7 +127,7 @@ CONFIGS   = {"my_workflow": MyConfig}
 
 ## Deployment Modes
 
-The `__main__.py` entry point supports three modes:
+The `__main__.py` entry point supports several modes:
 
 ```bash
 # FastAPI server — interactive API at http://127.0.0.1:3116/docs
@@ -139,14 +139,18 @@ python -m my_project protocols_hystoric/snapshot_20250101T120000.json
 # MCP server — expose workflows as tools to Claude or other agents
 python -m my_project --mcp
 
+# MCP server over streamable HTTP, exposed at http://127.0.0.1:3117/mcp
+python -m my_project --mcp-http --port 3117
+
 # Development with auto-reload
 python -m my_project --fastapi --reload
 ```
 
-### Adding the MCP server to an LLM client
+### MCP stdio
 
-The MCP server runs over **stdio** by default, so it does not have an HTTP
-address. In an MCP-capable LLM client, add it as a command-based server:
+The MCP server runs over **stdio** by default. It does not expose an HTTP
+address in this mode. Instead, the LLM client starts the server command and
+communicates through the process stdin/stdout streams:
 
 ```json
 {
@@ -204,10 +208,40 @@ you may not need this extra environment variable. If your MCP client reports
 shown above.
 
 
-If your client asks for an address or URL, this project does not expose one for
-MCP in the current CLI. Use the command configuration above. The address
-`http://127.0.0.1:3116` is only for the FastAPI REST API when running
-`python -m my_project --fastapi --port 3116`.
+### MCP HTTP
+
+Use streamable HTTP when your MCP client asks for a URL or when you want the
+server to run independently of the LLM client process:
+
+```bash
+python -m my_project --mcp-http --host 127.0.0.1 --port 3117
+```
+
+The MCP HTTP address is:
+
+```text
+http://127.0.0.1:3117/mcp
+```
+
+For the included example project on Windows:
+
+```bash
+cd D:\Projects\chemunited-workflow\examples
+set PYTHONPATH=D:\Projects\chemunited-workflow\examples\custom_project
+..\.venv\Scripts\python.exe -m custom_project --mcp-http --port 3117
+```
+
+Use `--mcp-path` to change the endpoint path:
+
+```bash
+python -m my_project --mcp-http --port 3117 --mcp-path /chemunited-mcp
+```
+
+Then the address becomes `http://127.0.0.1:3117/chemunited-mcp`.
+
+MCP HTTP is separate from the FastAPI REST API. FastAPI uses
+`http://127.0.0.1:3116/docs`; MCP HTTP uses the MCP endpoint path, such as
+`http://127.0.0.1:3117/mcp`.
 
 ## API Overview
 

@@ -21,11 +21,15 @@ def create_mcp_server(
     processes: dict[str, type[Process]],
     configs: dict[str, type[BaseModel]],
     main_parameter_class: type[BaseModel],
+    host: str = "127.0.0.1",
+    port: int = 8000,
+    streamable_http_path: str = "/mcp",
 ) -> FastMCP:
     """Create and return a configured MCP server.
 
     Exposes the same capabilities as API 2 (builder + execute) as MCP tools,
-    with polling instead of SSE for run status.
+    with polling instead of SSE for run status. The returned server can be run
+    with either stdio or streamable HTTP transport.
     """
     run_store = RunStore()
     protocol_service = ProtocolService(
@@ -40,6 +44,11 @@ def create_mcp_server(
         configs=configs,
         run_store=run_store,
     )
-    mcp = FastMCP("chemunited")
+    mcp = FastMCP(
+        "chemunited",
+        host=host,
+        port=port,
+        streamable_http_path=streamable_http_path,
+    )
     register_tools(mcp, protocol_service, runner_service)
     return mcp
