@@ -143,6 +143,72 @@ python -m my_project --mcp
 python -m my_project --fastapi --reload
 ```
 
+### Adding the MCP server to an LLM client
+
+The MCP server runs over **stdio** by default, so it does not have an HTTP
+address. In an MCP-capable LLM client, add it as a command-based server:
+
+```json
+{
+  "mcpServers": {
+    "chemunited-workflow": {
+      "command": "python",
+      "args": ["-m", "my_project", "--mcp"],
+      "cwd": "/absolute/path/to/parent-of-my_project"
+    }
+  }
+}
+```
+
+If you want the client to use a virtual environment, point `command` directly
+at that environment's Python executable:
+
+```json
+{
+  "mcpServers": {
+    "chemunited-workflow": {
+      "command": "/absolute/path/to/.venv/bin/python",
+      "args": ["-m", "my_project", "--mcp"],
+      "cwd": "/absolute/path/to/parent-of-my_project",
+      "env": {
+        "PYTHONPATH": "/absolute/path/to/my_project"
+      }
+    }
+  }
+}
+```
+
+On Windows, for the included example project, assuming this repository is
+checked out at `D:\Projects\chemunited-workflow`:
+
+```json
+{
+  "mcpServers": {
+    "chemunited-workflow": {
+      "command": "D:\\Projects\\chemunited-workflow\\.venv\\Scripts\\python.exe",
+      "args": ["-m", "custom_project", "--mcp"],
+      "cwd": "D:\\Projects\\chemunited-workflow\\examples",
+      "env": {
+        "PYTHONPATH": "D:\\Projects\\chemunited-workflow\\examples\\custom_project"
+      }
+    }
+  }
+}
+```
+
+The `PYTHONPATH` entry is needed for this example project because
+`custom_project` imports its internal `protocols` package as a top-level module.
+If your own project uses package-relative imports or is installed as a package,
+you may not need this extra environment variable. If your MCP client reports
+`ModuleNotFoundError: No module named 'protocols'`, add the `PYTHONPATH` entry
+shown above.
+
+
+If your client asks for an address or URL, this project does not expose one for
+MCP in the current CLI. Use the command configuration above. The address
+`http://127.0.0.1:3116` is only for the FastAPI REST API when running
+`python -m my_project --fastapi --port 3116`.
+
 ## API Overview
 
 When running in `--fastapi` mode the following endpoints are available:

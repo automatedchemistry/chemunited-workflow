@@ -128,7 +128,10 @@ class ProtocolService:
         ]
 
     def read_log(self, filename: str, tail: int | None = None) -> str:
-        path = self._log_dir / filename
+        log_dir = self._log_dir.resolve()
+        path = (self._log_dir / filename).resolve()
+        if not str(path).startswith(str(log_dir)):
+            raise ValueError("Security violation - path outside log directory.")
         if not path.exists():
             raise FileNotFoundError(f"Log '{filename}' not found.")
         text = path.read_text(encoding="utf-8")

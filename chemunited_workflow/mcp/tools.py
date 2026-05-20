@@ -115,3 +115,15 @@ def register_tools(
     def list_logs() -> list[dict]:
         """List all execution log files, most recent first."""
         return protocol.list_logs()
+
+    @mcp.tool()
+    def read_log(filename: str) -> str:
+        """Read the full text content of a specific execution log file from the log
+        directory. Use ``list_logs`` first to discover available filenames.
+
+        Parameters
+        ----------
+        filename:
+            The name of the log file (e.g. ``'protocol_executed_20240101T120000.log'``).
+        """
+        return protocol.read_log(filename)
