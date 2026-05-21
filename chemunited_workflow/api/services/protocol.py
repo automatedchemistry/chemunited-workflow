@@ -82,7 +82,9 @@ class ProtocolService:
         timestamp = datetime.now().strftime("%Y-%m-%dT%H-%M-%S")
         filename = f"{name}_{timestamp}.json"
         path = self._snapshot_dir / filename
-        path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+        path.write_text(
+            json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8"
+        )
         return filename
 
     def _validate_snapshot(self, data: dict[str, Any]) -> None:
@@ -179,11 +181,13 @@ class ProtocolService:
                     start=1,
                 ):
                     if query_lower in line.lower():
-                        results.append({
-                            "filename": log_file.name,
-                            "line_number": line_number,
-                            "line": line.strip(),
-                        })
+                        results.append(
+                            {
+                                "filename": log_file.name,
+                                "line_number": line_number,
+                                "line": line.strip(),
+                            }
+                        )
                         if len(results) >= max_results:
                             break
             except OSError:

@@ -80,8 +80,12 @@ class WorkflowExecutorState:
     node_state: dict[tuple[str, int], NodeState] = field(default_factory=dict)
     node_result: dict[tuple[str, int], bool | None] = field(default_factory=dict)
     node_runtime: dict[tuple[str, int], NodeRuntime] = field(default_factory=dict)
-    active_predecessors: dict[tuple[str, int], set[tuple[str, int]]] = field(default_factory=dict)
-    completed_predecessors: dict[tuple[str, int], set[tuple[str, int]]] = field(default_factory=dict)
+    active_predecessors: dict[tuple[str, int], set[tuple[str, int]]] = field(
+        default_factory=dict
+    )
+    completed_predecessors: dict[tuple[str, int], set[tuple[str, int]]] = field(
+        default_factory=dict
+    )
     scheduled: dict[tuple[str, int], bool] = field(default_factory=dict)
     errors: dict[tuple[str, int], Exception] = field(default_factory=dict)
 
@@ -97,7 +101,9 @@ class WorkflowResult:
 
     def model_dump(self) -> dict:
         return {
-            "node_state": {f"{k[0]}:{k[1]}": str(v) for k, v in self.node_state.items()},
+            "node_state": {
+                f"{k[0]}:{k[1]}": str(v) for k, v in self.node_state.items()
+            },
             "node_result": {f"{k[0]}:{k[1]}": v for k, v in self.node_result.items()},
             "node_runtime": {
                 f"{k[0]}:{k[1]}": {
@@ -147,6 +153,7 @@ class WorkflowExecutionEvent:
 
     def model_dump_json(self) -> str:
         import json as _json
+
         return _json.dumps(self.model_dump())
 
 

@@ -13,10 +13,13 @@ from tests.helpers import (
 )
 
 
-def _load_process(process_dir: Path, config_values: dict | None = None, process_index: int = 0):
+def _load_process(
+    process_dir: Path, config_values: dict | None = None, process_index: int = 0
+):
     """Dynamically import MyProcess from process_dir and instantiate it."""
     path = process_dir / "my_process.py"
     spec = importlib.util.spec_from_file_location("my_process", path)
+    assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     # Required so inspect.getfile can resolve the class back to its source file
     sys.modules["my_process"] = module
@@ -26,6 +29,7 @@ def _load_process(process_dir: Path, config_values: dict | None = None, process_
 
 
 # ── Phase 1: MainParameter class ─────────────────────────────────────────────
+
 
 def test_no_main_parameters_file(tmp_path):
     dirs = make_project_tree(tmp_path)
@@ -80,6 +84,7 @@ def test_main_parameters_required_field_fails(tmp_path):
 
 # ── Phase 2: historic JSON ────────────────────────────────────────────────────
 
+
 def test_no_historic_file_returns_true(tmp_path):
     dirs = make_project_tree(tmp_path)
     process = _load_process(dirs["process_dir"])
@@ -90,7 +95,10 @@ def test_no_historic_file_returns_true(tmp_path):
 def test_historic_json_main_parameter_without_class_fails(tmp_path):
     dirs = make_project_tree(tmp_path)
     (dirs["process_dir"] / "main_parameters.py").unlink()
-    data = {"main_parameter": {"reagent_volume_ml": 9.0}, "my_process_0": {"value": 2.5}}
+    data = {
+        "main_parameter": {"reagent_volume_ml": 9.0},
+        "my_process_0": {"value": 2.5},
+    }
     (dirs["historic_dir"] / "parameters.json").write_text(
         json.dumps(data), encoding="utf-8"
     )

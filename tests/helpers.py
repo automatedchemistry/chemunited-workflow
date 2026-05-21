@@ -3,7 +3,7 @@
 from pathlib import Path
 
 
-MINIMAL_PROCESS_SRC = '''
+MINIMAL_PROCESS_SRC = """
 from pydantic import BaseModel
 from chemunited_workflow import Process, NodeExecutionContext, WorkflowEdgeSpec, WorkflowNodeSpec
 import networkx as nx
@@ -22,15 +22,15 @@ class MyProcess(Process):
         return True
     def finish(self, ctx: NodeExecutionContext) -> bool:
         return True
-'''
+"""
 
-MAIN_PARAMETERS_SRC = '''
+MAIN_PARAMETERS_SRC = """
 from pydantic import BaseModel
 
 class MainParameter(BaseModel):
     reagent_volume_ml: float = 5.0
     target_temperature_c: float = 25.0
-'''
+"""
 
 
 def write_source(directory: Path, filename: str, source: str) -> Path:

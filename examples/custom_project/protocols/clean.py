@@ -4,9 +4,7 @@
 from __future__ import annotations
 
 import networkx as nx
-from pydantic import BaseModel, ConfigDict, Field
-from typing import Annotated
-from loguru import logger
+from pydantic import BaseModel, ConfigDict
 from time import sleep
 
 from chemunited_workflow import (
@@ -14,8 +12,6 @@ from chemunited_workflow import (
     Process,
     WorkflowEdgeSpec,
     WorkflowNodeSpec,
-    ChemUnitQuantity,
-    ChemQuantityValidator,
 )
 
 # ── Process configuration ──────────────────────────────────────────────────────
@@ -38,66 +34,66 @@ class CustomProcess(Process[ProcessConfig]):
     """User-defined workflow process."""
 
     def build_workflow(self) -> nx.DiGraph:
-        graph = nx.DiGraph()
+        graph: nx.DiGraph = nx.DiGraph()
 
         graph.add_node(
             "start",
             **WorkflowNodeSpec(
-                node_id='start',
-                method='start',
+                node_id="start",
+                method="start",
                 position=(-11.607142857142833, 298.2142857142858),
             ).model_dump(exclude_none=True),
-            block_tag='start',
+            block_tag="start",
         )
 
         graph.add_node(
             "end",
             **WorkflowNodeSpec(
-                node_id='end',
-                method='finish',
+                node_id="end",
+                method="finish",
                 position=(1469.1258902773764, 286.183241203712),
             ).model_dump(exclude_none=True),
-            block_tag='end',
+            block_tag="end",
         )
 
         graph.add_node(
             "conditional_1",
             **WorkflowNodeSpec(
-                node_id='conditional_1',
-                method='conditional_1',
+                node_id="conditional_1",
+                method="conditional_1",
                 position=(414.2673964671434, 159.7141141969438),
             ).model_dump(exclude_none=True),
-            block_tag='if',
+            block_tag="if",
         )
 
         graph.add_node(
             "script_1",
             **WorkflowNodeSpec(
-                node_id='script_1',
-                method='script_1',
+                node_id="script_1",
+                method="script_1",
                 position=(715.1809028845425, 35.244942511821606),
             ).model_dump(exclude_none=True),
-            block_tag='script',
+            block_tag="script",
         )
 
         graph.add_node(
             "loop_1",
             **WorkflowNodeSpec(
-                node_id='loop_1',
-                method='loop_1',
+                node_id="loop_1",
+                method="loop_1",
                 position=(1129.026575925248, 63.16232592588801),
             ).model_dump(exclude_none=True),
-            block_tag='loop',
+            block_tag="loop",
         )
 
         graph.add_node(
             "command_1",
             **WorkflowNodeSpec(
-                node_id='command_1',
-                method='command_1',
+                node_id="command_1",
+                method="command_1",
                 position=(875.0, 351.0),
             ).model_dump(exclude_none=True),
-            block_tag='command',
+            block_tag="command",
         )
 
         graph.add_edge(
@@ -188,4 +184,3 @@ class CustomProcess(Process[ProcessConfig]):
             disconnect="",
         )
         return True
-

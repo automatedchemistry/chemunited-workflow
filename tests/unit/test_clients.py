@@ -17,6 +17,7 @@ BASE_URL = "http://device-server:8000"
 
 # ── _build_url ────────────────────────────────────────────────────────────────
 
+
 def test_build_url_trailing_slash_stripped():
     client = BaseClient("http://device-server:8000/")
     assert client._build_url("/pump/dose") == "http://device-server:8000/pump/dose"
@@ -29,6 +30,7 @@ def test_build_url_no_double_slash():
 
 # ── Hook order ────────────────────────────────────────────────────────────────
 
+
 def test_hook_order_log_before_raise():
     client = BaseClient(BASE_URL)
     hooks = client._session.hooks["response"]
@@ -37,6 +39,7 @@ def test_hook_order_log_before_raise():
 
 
 # ── _raise_for_status ─────────────────────────────────────────────────────────
+
 
 @resp_lib.activate
 def test_raise_for_status_on_4xx():
@@ -64,17 +67,20 @@ def test_200_does_not_raise():
 
 # ── _log_response ─────────────────────────────────────────────────────────────
 
+
 @resp_lib.activate
 def test_log_response_called_on_success(caplog):
     resp_lib.add(resp_lib.PUT, f"{BASE_URL}/dose", status=200, body=b"")
     client = BaseClient(BASE_URL)
     import logging
+
     with caplog.at_level(logging.DEBUG):
         client.put("/dose", json={"volume_ml": 5.0})
     # No assertion on exact log text — just verify no exception raised
 
 
 # ── ComponentClient: sequential calls ────────────────────────────────────────
+
 
 @resp_lib.activate
 def test_component_client_sequential_calls_succeed():
@@ -89,6 +95,7 @@ def test_component_client_sequential_calls_succeed():
 
 # ── ComponentClient: concurrency guard ───────────────────────────────────────
 
+
 def test_concurrent_access_raises():
     """While one thread holds the lock, a second raises ConcurrentClientAccessError."""
     client = ComponentClient(BASE_URL)
@@ -97,6 +104,7 @@ def test_concurrent_access_raises():
     # Hold the lock from the main thread to simulate a concurrent access
     client._access_lock.acquire()
     try:
+
         def attempt():
             try:
                 client.get("/x")
@@ -145,17 +153,28 @@ def test_client_usable_after_failed_concurrent_call():
 
 # ── _write_json_log ───────────────────────────────────────────────────────────
 
+
 def test_write_json_log_none_creates_no_file(tmp_path):
     client = ComponentClient(BASE_URL, pool_json_log=None)
-    client._write_json_log({"method": "GET", "command": "/x", "component": "pump", "params": None})
+    client._write_json_log(
+        {"method": "GET", "command": "/x", "component": "pump", "params": None}
+    )
     assert list(tmp_path.iterdir()) == []
 
 
 def test_write_json_log_writes_expected_keys(tmp_path):
     log_path = tmp_path / "pump.jsonl"
     client = ComponentClient(BASE_URL, pool_json_log=log_path)
-    client._write_json_log({"method": "PUT", "command": "/dose", "component": "pump", "params": {"volume": 5}})
+    client._write_json_log(
+        {
+            "method": "PUT",
+            "command": "/dose",
+            "component": "pump",
+            "params": {"volume": 5},
+        }
+    )
     import json
+
     record = json.loads(log_path.read_text(encoding="utf-8").strip())
     assert record["method"] == "PUT"
     assert record["command"] == "/dose"
@@ -165,11 +184,20 @@ def test_write_json_log_writes_expected_keys(tmp_path):
 
 def test_write_json_log_appends_multiple_lines(tmp_path):
     import json
+
     log_path = tmp_path / "pump.jsonl"
     client = ComponentClient(BASE_URL, pool_json_log=log_path)
-    client._write_json_log({"method": "PUT", "command": "/a", "component": "pump", "params": None})
-    client._write_json_log({"method": "GET", "command": "/b", "component": "pump", "params": None})
-    lines = [l for l in log_path.read_text(encoding="utf-8").splitlines() if l.strip()]
+    client._write_json_log(
+        {"method": "PUT", "command": "/a", "component": "pump", "params": None}
+    )
+    client._write_json_log(
+        {"method": "GET", "command": "/b", "component": "pump", "params": None}
+    )
+    lines = [
+        line
+        for line in log_path.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
     assert len(lines) == 2
     assert json.loads(lines[0])["command"] == "/a"
     assert json.loads(lines[1])["command"] == "/b"
@@ -178,7 +206,9 @@ def test_write_json_log_appends_multiple_lines(tmp_path):
 def test_write_json_log_creates_parent_dir(tmp_path):
     log_path = tmp_path / "nested" / "deep" / "pump.jsonl"
     client = ComponentClient(BASE_URL, pool_json_log=log_path)
-    client._write_json_log({"method": "GET", "command": "/x", "component": "pump", "params": None})
+    client._write_json_log(
+        {"method": "GET", "command": "/x", "component": "pump", "params": None}
+    )
     assert log_path.exists()
 
 
@@ -191,6 +221,7 @@ def test_write_json_log_called_before_request_dry_run(tmp_path):
 
 def test_write_json_log_written_in_dry_run(tmp_path):
     import json
+
     log_path = tmp_path / "pump.jsonl"
     client = ComponentClient(BASE_URL, dry_run=True, pool_json_log=log_path)
     client.put("/dose", volume=3)

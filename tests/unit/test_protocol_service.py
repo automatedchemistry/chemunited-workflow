@@ -47,6 +47,7 @@ def svc(tmp_path):
 
 # ── read_process ──────────────────────────────────────────────────────────────
 
+
 def test_read_process_valid(svc, tmp_path):
     (tmp_path / "protocols" / "clean.py").write_text(
         "class MyProcess:\n    pass\n", encoding="utf-8"
@@ -66,6 +67,7 @@ def test_read_process_not_found(svc):
 
 
 # ── delete_snapshot ───────────────────────────────────────────────────────────
+
 
 def test_delete_snapshot_existing(svc, tmp_path):
     snap = tmp_path / "protocols_hystoric" / "snap_001.json"
@@ -87,6 +89,7 @@ def test_delete_snapshot_file_gone_after_call(svc, tmp_path):
 
 
 # ── archive_log ───────────────────────────────────────────────────────────────
+
 
 def test_archive_log_existing(svc, tmp_path):
     (tmp_path / "log" / "run.log").write_text("log content", encoding="utf-8")
@@ -119,6 +122,7 @@ def test_archive_log_return_value(svc, tmp_path):
 
 # ── search_logs ───────────────────────────────────────────────────────────────
 
+
 def test_search_logs_match_found(svc, tmp_path):
     (tmp_path / "log" / "test.log").write_text(
         "2026-05-15 INFO process started\n2026-05-15 INFO process finished\n",
@@ -137,7 +141,9 @@ def test_search_logs_no_match(svc, tmp_path):
 
 
 def test_search_logs_case_insensitive(svc, tmp_path):
-    (tmp_path / "log" / "test3.log").write_text("2026 ERROR occurred\n", encoding="utf-8")
+    (tmp_path / "log" / "test3.log").write_text(
+        "2026 ERROR occurred\n", encoding="utf-8"
+    )
     results = svc.search_logs("error")
     assert len(results) == 1
 
@@ -175,6 +181,7 @@ def test_search_logs_file_disappears(svc, tmp_path):
 
 # ── ping_components ───────────────────────────────────────────────────────────
 
+
 def _mock_response(status_code: int, elapsed_ms: float = 100.0) -> MagicMock:
     resp = MagicMock()
     resp.status_code = status_code
@@ -200,7 +207,9 @@ def test_ping_online_503(svc):
 
 
 def test_ping_connection_error(svc):
-    with patch(f"{_MODULE}.get", side_effect=requests.exceptions.ConnectionError("refused")):
+    with patch(
+        f"{_MODULE}.get", side_effect=requests.exceptions.ConnectionError("refused")
+    ):
         results = svc.ping_components()
     for r in results:
         assert r["online"] is False

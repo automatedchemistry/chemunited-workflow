@@ -15,7 +15,7 @@ from chemunited_workflow import (
 )
 
 if TYPE_CHECKING:
-    from .main_parameters import MainParameter
+    pass
 
 
 # ── Process configuration ──────────────────────────────────────────────────────
@@ -36,156 +36,156 @@ class CustomProcess(Process[ProcessConfig]):
     """User-defined workflow process."""
 
     def build_workflow(self) -> nx.DiGraph:
-        graph = nx.DiGraph()
+        graph: nx.DiGraph = nx.DiGraph()
 
         graph.add_node(
             "start",
             **WorkflowNodeSpec(
-                node_id='start',
-                method='start',
+                node_id="start",
+                method="start",
                 position=(-397.0, 255.0),
             ).model_dump(exclude_none=True),
-            block_tag='start',
+            block_tag="start",
         )
 
         graph.add_node(
             "end",
             **WorkflowNodeSpec(
-                node_id='end',
-                method='finish',
+                node_id="end",
+                method="finish",
                 position=(2319.2832199065606, 185.51828425932786),
             ).model_dump(exclude_none=True),
-            block_tag='end',
+            block_tag="end",
         )
 
         graph.add_node(
             "script_1",
             **WorkflowNodeSpec(
-                node_id='script_1',
-                method='script_1',
+                node_id="script_1",
+                method="script_1",
                 position=(-118.0, 173.0),
             ).model_dump(exclude_none=True),
-            block_tag='script',
+            block_tag="script",
         )
 
         graph.add_node(
             "script_2",
             **WorkflowNodeSpec(
-                node_id='script_2',
-                method='script_2',
+                node_id="script_2",
+                method="script_2",
                 position=(251.0, 16.0),
             ).model_dump(exclude_none=True),
-            block_tag='script',
+            block_tag="script",
         )
 
         graph.add_node(
             "script_3",
             **WorkflowNodeSpec(
-                node_id='script_3',
-                method='script_3',
+                node_id="script_3",
+                method="script_3",
                 position=(243.0, 270.0),
             ).model_dump(exclude_none=True),
-            block_tag='script',
+            block_tag="script",
         )
 
         graph.add_node(
             "script_4",
             **WorkflowNodeSpec(
-                node_id='script_4',
-                method='script_4',
+                node_id="script_4",
+                method="script_4",
                 position=(640.0, -135.0),
             ).model_dump(exclude_none=True),
-            block_tag='script',
+            block_tag="script",
         )
 
         graph.add_node(
             "script_5",
             **WorkflowNodeSpec(
-                node_id='script_5',
-                method='script_5',
+                node_id="script_5",
+                method="script_5",
                 position=(678.8822323200001, 26.956093439999975),
             ).model_dump(exclude_none=True),
-            block_tag='script',
+            block_tag="script",
         )
 
         graph.add_node(
             "loop_1",
             **WorkflowNodeSpec(
-                node_id='loop_1',
-                method='loop_1',
+                node_id="loop_1",
+                method="loop_1",
                 position=(1081.0, -25.0),
             ).model_dump(exclude_none=True),
-            block_tag='loop',
+            block_tag="loop",
         )
 
         graph.add_node(
             "conditional_1",
             **WorkflowNodeSpec(
-                node_id='conditional_1',
-                method='conditional_1',
+                node_id="conditional_1",
+                method="conditional_1",
                 position=(651.8549417820161, 363.18337407385616),
             ).model_dump(exclude_none=True),
-            block_tag='if',
+            block_tag="if",
         )
 
         graph.add_node(
             "script_6",
             **WorkflowNodeSpec(
-                node_id='script_6',
-                method='script_6',
+                node_id="script_6",
+                method="script_6",
                 position=(947.4348888883203, 219.09431805542403),
             ).model_dump(exclude_none=True),
-            block_tag='script',
+            block_tag="script",
         )
 
         graph.add_node(
             "script_7",
             **WorkflowNodeSpec(
-                node_id='script_7',
-                method='script_7',
+                node_id="script_7",
+                method="script_7",
                 position=(937.5657754624006, 453.97921759232),
             ).model_dump(exclude_none=True),
-            block_tag='script',
+            block_tag="script",
         )
 
         graph.add_node(
             "script_8",
             **WorkflowNodeSpec(
-                node_id='script_8',
-                method='script_8',
+                node_id="script_8",
+                method="script_8",
                 position=(1340.2256032399362, 345.4189699072),
             ).model_dump(exclude_none=True),
-            block_tag='script',
+            block_tag="script",
         )
 
         graph.add_node(
             "script_9",
             **WorkflowNodeSpec(
-                node_id='script_9',
-                method='script_9',
+                node_id="script_9",
+                method="script_9",
                 position=(1640.2466513879044, 155.93199212953604),
             ).model_dump(exclude_none=True),
-            block_tag='script',
+            block_tag="script",
         )
 
         graph.add_node(
             "script_10",
             **WorkflowNodeSpec(
-                node_id='script_10',
-                method='script_10',
+                node_id="script_10",
+                method="script_10",
                 position=(1650.115764813824, 471.743621758976),
             ).model_dump(exclude_none=True),
-            block_tag='script',
+            block_tag="script",
         )
 
         graph.add_node(
             "script_11",
             **WorkflowNodeSpec(
-                node_id='script_11',
-                method='script_11',
+                node_id="script_11",
+                method="script_11",
                 position=(2003.430025461761, 27.633517592575995),
             ).model_dump(exclude_none=True),
-            block_tag='script',
+            block_tag="script",
         )
 
         graph.add_edge(
@@ -402,4 +402,3 @@ class CustomProcess(Process[ProcessConfig]):
     def script_11(self, ctx: NodeExecutionContext) -> bool:
         ctx.runtime.status_message = "Script 11 ran."
         return True
-

@@ -85,8 +85,8 @@ class BaseClient:
 
         self._log(
             label="REQUEST",
-            method=response.request.method,
-            url=response.request.url,
+            method=response.request.method or "",
+            url=response.request.url or "",
             req_body=req_body,
             req_content_type=response.request.headers.get("Content-Type"),
             status_code=response.status_code,
@@ -146,13 +146,13 @@ class ComponentClient(BaseClient):
         *,
         component_ui: str = "undefined",
         dry_run: bool = False,
-        pool_json_log: Path | None = None
+        pool_json_log: Path | None = None,
     ) -> None:
         super().__init__(url, dry_run=dry_run)
         self._access_lock = threading.Lock()
         self.component_ui = component_ui
         self.pool_json_log = pool_json_log
-    
+
     def _write_json_log(self, data: dict[str, Any]) -> None:
         if self.pool_json_log is None:
             return

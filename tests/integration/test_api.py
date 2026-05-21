@@ -18,6 +18,7 @@ FIXTURES = Path(__file__).parent.parent / "fixtures"
 
 def _load_module(path: Path, name: str):
     spec = importlib.util.spec_from_file_location(name, path)
+    assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
@@ -97,6 +98,7 @@ def client_readonly(app_readonly):
 
 # ── /processes ────────────────────────────────────────────────────────────────
 
+
 def test_list_processes(client):
     r = client.get("/processes/")
     assert r.status_code == 200
@@ -116,6 +118,7 @@ def test_get_process_schema_known(client):
 
 
 # ── /snapshots ────────────────────────────────────────────────────────────────
+
 
 def test_list_snapshots(client):
     r = client.get("/snapshots/")
@@ -170,6 +173,7 @@ def test_write_disabled_when_builder_false(client_readonly):
 
 # ── /run ──────────────────────────────────────────────────────────────────────
 
+
 def test_start_run_returns_run_id(client):
     r = client.post("/run/", json={"snapshot": "run_001.json"})
     assert r.status_code == 202
@@ -212,6 +216,7 @@ def test_cancel_unknown_run(client):
 
 # ── /components ───────────────────────────────────────────────────────────────
 
+
 def test_get_components(client):
     r = client.get("/components/")
     assert r.status_code == 200
@@ -219,6 +224,7 @@ def test_get_components(client):
 
 
 # ── /logs ─────────────────────────────────────────────────────────────────────
+
 
 def test_list_logs(client):
     r = client.get("/logs/")
@@ -239,6 +245,7 @@ def test_read_missing_log(client):
 
 
 # ── /run/pool ─────────────────────────────────────────────────────────────────
+
 
 def test_pool_no_dir_returns_empty(client):
     r = client.get("/run/pool")
@@ -301,6 +308,7 @@ def test_pool_second_poll_returns_empty(client, project):
 
 # ── /processes/{name}/source ──────────────────────────────────────────────────
 
+
 def test_get_process_source_existing(client):
     r = client.get("/processes/my_process/source")
     assert r.status_code == 200
@@ -322,6 +330,7 @@ def test_get_process_source_path_traversal(client):
 
 # ── /snapshots DELETE (refactored) ────────────────────────────────────────────
 
+
 def test_delete_existing_snapshot(client, project):
     r = client.delete("/snapshots/run_001.json")
     assert r.status_code == 204
@@ -339,6 +348,7 @@ def test_delete_snapshot_builder_false(client_readonly, project):
 
 
 # ── /logs/search ──────────────────────────────────────────────────────────────
+
 
 def test_search_logs_match(client):
     r = client.get("/logs/search?query=started")
@@ -362,6 +372,7 @@ def test_search_logs_max_results(client):
 
 # ── /logs/{filename}/archive ──────────────────────────────────────────────────
 
+
 def test_archive_existing_log(client, project):
     r = client.post("/logs/app.log/archive")
     assert r.status_code == 200
@@ -375,6 +386,7 @@ def test_archive_missing_log(client):
 
 
 # ── /components/ping ─────────────────────────────────────────────────────────
+
 
 def test_ping_components_online(client, mocker):
     mock_resp = mocker.MagicMock()
@@ -392,6 +404,7 @@ def test_ping_components_online(client, mocker):
 
 def test_ping_components_offline(client, mocker):
     import requests as req
+
     mocker.patch(
         "chemunited_workflow.api.services.protocol._requests.get",
         side_effect=req.exceptions.ConnectionError("refused"),

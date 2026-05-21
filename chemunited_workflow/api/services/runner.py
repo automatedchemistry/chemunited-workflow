@@ -79,7 +79,8 @@ class RunnerService:
                 log_dir=self._project_dir / "log",
             )
             for process_name, process_index in sequence:
-                if self._run_store.get(run_id).state == RunState.CANCELLED:
+                record = self._run_store.get(run_id)
+                if record is not None and record.state == RunState.CANCELLED:
                     return
                 config_data = data.get(f"{process_name}_{process_index}", {})
                 config = self._configs[process_name].model_validate(config_data)

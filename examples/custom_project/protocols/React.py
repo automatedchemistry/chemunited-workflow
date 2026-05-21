@@ -4,11 +4,9 @@
 from __future__ import annotations
 
 import networkx as nx
-from pydantic import BaseModel, ConfigDict, Field
-from typing import Annotated
-from loguru import logger
+from pydantic import BaseModel, ConfigDict
 
-#from chemunited.core.utils import ChemQuantityValidator, ChemUnitQuantity
+# from chemunited.core.utils import ChemQuantityValidator, ChemUnitQuantity
 
 from chemunited_workflow import (
     NodeExecutionContext,
@@ -33,100 +31,99 @@ class ProcessConfig(BaseModel):
 
 
 class CustomProcess(Process[ProcessConfig]):
-    
     """User-defined workflow process."""
 
     def build_workflow(self) -> nx.DiGraph:
-        graph = nx.DiGraph()
+        graph: nx.DiGraph = nx.DiGraph()
 
         graph.add_node(
             "start",
             **WorkflowNodeSpec(
-                node_id='start',
-                method='start',
+                node_id="start",
+                method="start",
                 position=(-174.0, 230.0),
             ).model_dump(exclude_none=True),
-            block_tag='start',
+            block_tag="start",
         )
 
         graph.add_node(
             "end",
             **WorkflowNodeSpec(
-                node_id='end',
-                method='finish',
+                node_id="end",
+                method="finish",
                 position=(1619.0, 256.0),
             ).model_dump(exclude_none=True),
-            block_tag='end',
+            block_tag="end",
         )
 
         graph.add_node(
             "script_1",
             **WorkflowNodeSpec(
-                node_id='script_1',
-                method='script_1',
+                node_id="script_1",
+                method="script_1",
                 position=(347.0, 45.0),
             ).model_dump(exclude_none=True),
-            block_tag='script',
+            block_tag="script",
         )
 
         graph.add_node(
             "script_2",
             **WorkflowNodeSpec(
-                node_id='script_2',
-                method='script_2',
+                node_id="script_2",
+                method="script_2",
                 position=(334.15999999999997, 198.20000000000005),
             ).model_dump(exclude_none=True),
-            block_tag='script',
+            block_tag="script",
         )
 
         graph.add_node(
             "script_3",
             **WorkflowNodeSpec(
-                node_id='script_3',
-                method='script_3',
+                node_id="script_3",
+                method="script_3",
                 position=(339.4, 360.88000000000005),
             ).model_dump(exclude_none=True),
-            block_tag='script',
+            block_tag="script",
         )
 
         graph.add_node(
             "script_4",
             **WorkflowNodeSpec(
-                node_id='script_4',
-                method='script_4',
+                node_id="script_4",
+                method="script_4",
                 position=(732.4032000000001, 191.2544),
             ).model_dump(exclude_none=True),
-            block_tag='script',
+            block_tag="script",
         )
 
         graph.add_node(
             "script_5",
             **WorkflowNodeSpec(
-                node_id='script_5',
-                method='script_5',
+                node_id="script_5",
+                method="script_5",
                 position=(1137.6496, 68.47360000000002),
             ).model_dump(exclude_none=True),
-            block_tag='script',
+            block_tag="script",
         )
 
         graph.add_node(
             "script_6",
             **WorkflowNodeSpec(
-                node_id='script_6',
-                method='script_6',
+                node_id="script_6",
+                method="script_6",
                 position=(1068.9104000000004, 250.23999999999998),
             ).model_dump(exclude_none=True),
-            block_tag='script',
+            block_tag="script",
         )
 
         graph.add_node(
             "script_7",
             **WorkflowNodeSpec(
-                node_id='script_7',
-                method='script_7',
+                node_id="script_7",
+                method="script_7",
                 position=(1077.4927999999998, 423.8911999999999),
             ).model_dump(exclude_none=True),
-            block_tag='script',
+            block_tag="script",
         )
 
         graph.add_edge(
@@ -249,7 +246,9 @@ class CustomProcess(Process[ProcessConfig]):
 
     def script_3(self, ctx: NodeExecutionContext) -> bool:
         ctx.runtime.status_message = "Script 3 ran."
-        self.platform["Reagent pump"].put("infuse", rate="20 ml/min", volume="5 ml", wait_time=25)
+        self.platform["Reagent pump"].put(
+            "infuse", rate="20 ml/min", volume="5 ml", wait_time=25
+        )
         return True
 
     def script_4(self, ctx: NodeExecutionContext) -> bool:
@@ -261,23 +260,31 @@ class CustomProcess(Process[ProcessConfig]):
     def script_5(self, ctx: NodeExecutionContext) -> bool:
         ctx.runtime.status_message = "Script 5 ran."
         self.platform["AS Distribution valve"].put("position", connect="[[0, 2]]")
-        self.platform["AS pump"].put("infuse", volume="10 ml", rate="50 ml/min", wait_time=12)
+        self.platform["AS pump"].put(
+            "infuse", volume="10 ml", rate="50 ml/min", wait_time=12
+        )
         self.platform["gantry"].put("set_x_position", position="1")
         self.platform["gantry"].put("set_y_position", position="A")
         self.platform["gantry"].put("set_z_position", position="DOWN")
         # platform["AS SP valve"].put("position", connect="[[2, 3]]")
         self.platform["AS Distribution valve"].put("position", connect="[[0, 1]]")
         self.platform["AS injection"].put("position", connect="[[4, 5]]")
-        self.platform["AS pump"].put("withdraw", volume="10 ml", rate="50 ml/min", wait_time=12)
+        self.platform["AS pump"].put(
+            "withdraw", volume="10 ml", rate="50 ml/min", wait_time=12
+        )
         self.platform["AS injection"].put("position", connect="[[5, 6]]")
         return True
 
     def script_6(self, ctx: NodeExecutionContext) -> bool:
         ctx.runtime.status_message = "Script 6 ran."
         self.platform["Quencher valve"].put("position", connect="[[0, 4]]")
-        self.platform["Quencher pump"].put("infuse", volume="10 ml", rate="25 ml/min", wait_time=24)
+        self.platform["Quencher pump"].put(
+            "infuse", volume="10 ml", rate="25 ml/min", wait_time=24
+        )
         self.platform["Quencher valve"].put("position", connect="[[0, 3]]")
-        self.platform["Quencher pump"].put("withdraw", volume="5 ml", rate="25 ml/min", wait_time=12)
+        self.platform["Quencher pump"].put(
+            "withdraw", volume="5 ml", rate="25 ml/min", wait_time=12
+        )
         self.platform["Quencher valve"].put("position", connect="[[0, 5]]")
         return True
 
@@ -285,15 +292,14 @@ class CustomProcess(Process[ProcessConfig]):
         ctx.runtime.status_message = "Script 7 ran."
         self.platform["Reagent Valve"].put("position", connect="[[0, 1]]")
         self.platform["Reagent pump"].put(
-            "withdraw", 
-            volume="10 ml", 
+            "withdraw",
+            volume="10 ml",
             rate="25 ml/min",
-            wait_time=25, 
+            wait_time=25,
             wait_feedback_status=True,
             feedback_status_command="is-pumping",
-            feedback_answer="false"
+            feedback_answer="false",
         )
         self.platform["Reagent Valve"].put("position", connect="[[0, 5]]")
         self.platform["Relay"].put("power-on", channel="1")
         return True
-

@@ -101,6 +101,7 @@ async def stream_run(
     `{"state": "finished"|"failed"|"cancelled"}` frame when the run ends.
     For simple polling without a persistent connection, use `/status` instead.
     """
+
     async def generate():
         rec = svc._run_store.get(run_id)
         if rec is None:

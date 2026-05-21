@@ -60,9 +60,15 @@ class WorkflowLogger:
     def handle_event(self, event: WorkflowExecutionEvent) -> None:
         if event.node_key is not None:
             node_id, iteration = event.node_key
-            state_label = event.state.value if event.state is not None else event.event_type.value
+            state_label = (
+                event.state.value if event.state is not None else event.event_type.value
+            )
             tag = f"[{self._prefix}, NODE: {node_id}] {state_label}"
-            level = _STATE_LEVEL.get(event.state, "info") if event.state is not None else "info"
+            level = (
+                _STATE_LEVEL.get(event.state, "info")
+                if event.state is not None
+                else "info"
+            )
         else:
             tag = f"[{self._prefix}] {event.event_type.value}"
             level = "info"

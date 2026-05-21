@@ -20,12 +20,12 @@ class MinimalProcess(Process[MinimalConfig]):
     """Trivial two-node workflow used by every test that needs a runnable process."""
 
     def build_workflow(self) -> nx.DiGraph:
-        g = nx.DiGraph()
+        g: nx.DiGraph = nx.DiGraph()
         g.add_node(
             "start",
-            **WorkflowNodeSpec(node_id="start", method="start", label="Start").model_dump(
-                exclude_none=True
-            ),
+            **WorkflowNodeSpec(
+                node_id="start", method="start", label="Start"
+            ).model_dump(exclude_none=True),
         )
         g.add_node(
             "finish",

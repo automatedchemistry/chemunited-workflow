@@ -9,7 +9,6 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
-import responses as resp_lib
 
 from chemunited_workflow.clients import BaseClient, ComponentClient
 from chemunited_workflow.platform import Platform
@@ -22,12 +21,14 @@ FIXTURES = Path(__file__).parent.parent / "fixtures"
 
 def _load_module(path: Path, name: str):
     spec = importlib.util.spec_from_file_location(name, path)
+    assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
 
 
 # ── Unit-level dry-run ────────────────────────────────────────────────────────
+
 
 def test_dry_run_does_not_call_session_request():
     with patch("requests.Session.request") as mock_req:
@@ -49,7 +50,7 @@ def test_dry_run_response_empty_body():
 
 
 def test_dry_run_response_json_raises():
-    import json as _json
+
     client = BaseClient("http://device:8000", dry_run=True)
     r = client.get("/x")
     with pytest.raises(Exception):
@@ -58,8 +59,12 @@ def test_dry_run_response_json_raises():
 
 def test_dry_run_hooks_not_fired():
     client = BaseClient("http://device:8000", dry_run=True)
-    client._log_response = lambda *a, **kw: (_ for _ in ()).throw(AssertionError("hook called"))
-    client._raise_for_status = lambda *a, **kw: (_ for _ in ()).throw(AssertionError("hook called"))
+    client._log_response = lambda *a, **kw: (_ for _ in ()).throw(
+        AssertionError("hook called")
+    )
+    client._raise_for_status = lambda *a, **kw: (_ for _ in ()).throw(
+        AssertionError("hook called")
+    )
     # Should not raise
     r = client.get("/x")
     assert r.status_code == 200
@@ -67,6 +72,7 @@ def test_dry_run_hooks_not_fired():
 
 def test_dry_run_logs_info(caplog):
     import logging
+
     client = BaseClient("http://device:8000", dry_run=True)
     with caplog.at_level(logging.INFO):
         client.put("/dose", json={"volume_ml": 5.0})
@@ -76,6 +82,7 @@ def test_dry_run_logs_info(caplog):
 def test_component_client_concurrency_guard_active_in_dry_run():
     client = ComponentClient("http://device:8000", dry_run=True)
     from chemunited_workflow.exceptions import ConcurrentClientAccessError
+
     client._access_lock.acquire()
     try:
         with pytest.raises(ConcurrentClientAccessError):
@@ -85,6 +92,7 @@ def test_component_client_concurrency_guard_active_in_dry_run():
 
 
 # ── Integration-level dry-run ────────────────────────────────────────────────
+
 
 def test_from_connectivity_dry_run_propagated():
     p = Platform.from_connectivity(FIXTURES / "associations.json", dry_run=True)
@@ -105,7 +113,9 @@ def test_api_dry_run_run_completes(tmp_path):
         json.dumps(snapshot), encoding="utf-8"
     )
     mod = _load_module(dirs["process_dir"] / "my_process.py", "my_process")
-    main_mod = _load_module(dirs["process_dir"] / "main_parameters.py", "main_parameters")
+    main_mod = _load_module(
+        dirs["process_dir"] / "main_parameters.py", "main_parameters"
+    )
 
     app = create_api(
         project_dir=tmp_path,

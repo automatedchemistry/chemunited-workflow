@@ -124,7 +124,9 @@ class Process(ABC, Generic[ConfigT]):
                 return False
 
         # Phase 2: historic JSON
-        historic_filename = historic_file if historic_file is not None else "parameters.json"
+        historic_filename = (
+            historic_file if historic_file is not None else "parameters.json"
+        )
         historic_file_path = (
             process_dir.parent / "protocols_hystoric" / historic_filename
         )

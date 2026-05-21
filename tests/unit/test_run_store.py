@@ -3,10 +3,7 @@
 from __future__ import annotations
 
 import threading
-import time
-from unittest.mock import MagicMock
 
-import pytest
 
 from chemunited_workflow.api.run_store import RunState, RunStore
 from chemunited_workflow.models import WorkflowExecutionEvent
@@ -14,7 +11,9 @@ from chemunited_workflow.enums import WorkflowEventType
 
 
 def _make_event(msg: str = "test") -> WorkflowExecutionEvent:
-    return WorkflowExecutionEvent(event_type=WorkflowEventType.NODE_RUNNING, message=msg)
+    return WorkflowExecutionEvent(
+        event_type=WorkflowEventType.NODE_RUNNING, message=msg
+    )
 
 
 def test_create_returns_uuid_string():

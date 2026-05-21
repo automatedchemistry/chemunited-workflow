@@ -15,7 +15,7 @@ from chemunited_workflow import (
 )
 
 if TYPE_CHECKING:
-    from .main_parameters import MainParameter
+    pass
 
 
 # ── Process configuration ──────────────────────────────────────────────────────
@@ -36,26 +36,26 @@ class CustomProcess(Process[ProcessConfig]):
     """User-defined workflow process."""
 
     def build_workflow(self) -> nx.DiGraph:
-        graph = nx.DiGraph()
+        graph: nx.DiGraph = nx.DiGraph()
 
         graph.add_node(
             "start",
             **WorkflowNodeSpec(
-                node_id='start',
-                method='start',
+                node_id="start",
+                method="start",
                 position=(200.0, 300.0),
             ).model_dump(exclude_none=True),
-            block_tag='start',
+            block_tag="start",
         )
 
         graph.add_node(
             "end",
             **WorkflowNodeSpec(
-                node_id='end',
-                method='finish',
+                node_id="end",
+                method="finish",
                 position=(538.0, 170.0),
             ).model_dump(exclude_none=True),
-            block_tag='end',
+            block_tag="end",
         )
 
         graph.add_edge(

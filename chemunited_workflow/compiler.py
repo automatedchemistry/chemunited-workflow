@@ -6,7 +6,13 @@ from typing import Any
 
 import networkx as nx
 
-from .models import CompiledWorkflow, LoopBackSpec, NodeConfig, WorkflowEdgeSpec, WorkflowNodeSpec
+from .models import (
+    CompiledWorkflow,
+    LoopBackSpec,
+    NodeConfig,
+    WorkflowEdgeSpec,
+    WorkflowNodeSpec,
+)
 
 
 def compile_workflow(user_graph: nx.DiGraph) -> CompiledWorkflow:
@@ -14,7 +20,7 @@ def compile_workflow(user_graph: nx.DiGraph) -> CompiledWorkflow:
 
     user_graph_copy = user_graph.copy(as_view=False)
 
-    exec_graph = nx.DiGraph()
+    exec_graph: nx.DiGraph = nx.DiGraph()
     exec_graph.graph.update(dict(user_graph.graph))
 
     for node_id, node_data in user_graph.nodes(data=True):
@@ -52,7 +58,9 @@ def compile_workflow(user_graph: nx.DiGraph) -> CompiledWorkflow:
             f"Cycle detected in executable edges: {cycle_text}."
         )
 
-    return CompiledWorkflow(user_graph=user_graph_copy, exec_graph=exec_graph, loopbacks=loopbacks)
+    return CompiledWorkflow(
+        user_graph=user_graph_copy, exec_graph=exec_graph, loopbacks=loopbacks
+    )
 
 
 def _validate_node(node_id: str, attrs: dict[str, Any]) -> None:
