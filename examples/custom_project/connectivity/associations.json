@@ -1,5 +1,5 @@
 {
-  "server_url": "http://141.14.233.88:8000",
+  "server_url": "http://localhost:8000",
   "associations": [
     {
       "component": "AS injection",

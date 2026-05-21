@@ -109,11 +109,12 @@ my_project/
 ├── protocols/
 │   ├── __init__.py              # PROCESSES and CONFIGS dicts
 │   ├── main_parameters.py       # MainParameter Pydantic model
-│   └── my_workflow.py           # Process subclasses
+│   └── my_workflow.py           # Process subclasses (also readable via read_process)
 ├── connectivity/
 │   └── associations.json        # Device URL mapping
 ├── protocols_hystoric/          # Versioned protocol snapshots
 └── log/                         # Execution logs
+    └── archive/                 # Archived logs (populated by archive_log)
 ```
 
 `protocols/__init__.py` must export:
@@ -245,22 +246,76 @@ MCP HTTP is separate from the FastAPI REST API. FastAPI uses
 
 ## API Overview
 
-When running in `--fastapi` mode the following endpoints are available:
+When running in `--fastapi` mode the following endpoints are available.
+
+### Processes
 
 | Method | Path | Description |
 |--------|------|-------------|
-| `GET` | `/processes` | List available workflow processes |
+| `GET` | `/processes/` | List available workflow processes |
 | `GET` | `/processes/{name}/schema` | JSON schema for a process config |
-| `GET` | `/snapshots` | List saved protocol snapshots |
-| `POST` | `/snapshots` | Save a new snapshot |
-| `DELETE` | `/snapshots/{id}` | Delete a snapshot |
-| `POST` | `/runner/start` | Start a workflow run |
-| `GET` | `/runner/{run_id}/status` | Get run status and results |
-| `POST` | `/runner/{run_id}/cancel` | Cancel a running workflow |
-| `GET` | `/logs/{run_id}` | Stream execution logs |
-| `GET` | `/components` | List registered device clients |
+| `GET` | `/processes/{name}/source` | Full source code of a process file |
+
+### Snapshots *(builder mode only)*
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/snapshots/` | List saved protocol snapshots |
+| `GET` | `/snapshots/{filename}` | Read a snapshot by filename |
+| `POST` | `/snapshots/` | Save a new versioned snapshot |
+| `DELETE` | `/snapshots/{filename}` | Permanently delete a snapshot |
+
+### Run control
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `POST` | `/run/` | Start a workflow run from a snapshot |
+| `GET` | `/run/{run_id}/status` | Poll run state and events |
+| `GET` | `/run/{run_id}/report` | Full execution report for a finished run |
+| `DELETE` | `/run/{run_id}` | Cancel an active run |
+| `GET` | `/run/pool` | Poll pending device commands (device-side polling) |
+
+### Logs
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/logs/` | List log files (most recent first) |
+| `GET` | `/logs/search?query=...&max_results=50` | Search all log files (case-insensitive) |
+| `GET` | `/logs/{filename}?tail=N` | Read a log file (optional last-N-lines) |
+| `POST` | `/logs/{filename}/archive` | Move a log to `log/archive/` |
+
+### Components
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/components/` | Return the full `associations.json` map |
+| `GET` | `/components/ping?timeout=2.0` | Check reachability of every device URL |
 
 Visit `/docs` for the interactive Swagger UI.
+
+## MCP Tools
+
+When running in `--mcp` or `--mcp-http` mode, the following tools are exposed to the connected LLM agent:
+
+| Tool | Description |
+|------|-------------|
+| `list_processes` | Discover available process names and schemas |
+| `get_process_schema` | Full parameter schema for a named process |
+| `read_process` | Source code of a process definition file |
+| `list_snapshots` | List snapshots in `protocols_hystoric/` |
+| `get_snapshot` | Read a snapshot's full JSON content |
+| `create_snapshot` | Validate and save a new versioned snapshot |
+| `delete_snapshot` | Permanently delete a snapshot |
+| `start_run` | Execute a snapshot; returns a `run_id` |
+| `get_run_status` | Poll run state and events |
+| `get_run_report` | Full per-step execution report |
+| `cancel_run` | Cancel an active run |
+| `get_components` | Return the device connectivity map |
+| `ping_components` | Check reachability of all device URLs |
+| `list_logs` | List log files |
+| `read_log` | Read a log file's text content |
+| `search_logs` | Search log files for a query string |
+| `archive_log` | Move a log file to `log/archive/` |
 
 ## How Execution Works
 
