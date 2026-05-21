@@ -3,6 +3,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 
 from ..dependencies import get_protocol_service
+from ..schemas import ProcessSource
 from ..services.protocol import ProtocolService
 
 router = APIRouter(prefix="/processes", tags=["processes"])
@@ -17,6 +18,21 @@ async def list_processes(svc: ProtocolService = Depends(get_protocol_service)):
     Call this first to discover what processes can be added to a snapshot.
     """
     return svc.list_processes()
+
+
+@router.get("/{name}/source", response_model=ProcessSource)
+async def get_process_source(
+    name: str,
+    svc: ProtocolService = Depends(get_protocol_service),
+):
+    """Return the full source code of a process definition file."""
+    try:
+        source = svc.read_process(name)
+        return ProcessSource(name=name, source=source)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
 
 
 @router.get("/{name}/schema")

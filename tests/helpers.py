@@ -44,13 +44,15 @@ def make_project_tree(tmp_path: Path) -> dict:
     """Create the standard project directory layout inside *tmp_path*.
 
     Returns a dict with keys ``process_dir``, ``historic_dir``,
-    ``connectivity_dir`` pointing to the created directories.
+    ``connectivity_dir``, ``log_dir``, and ``protocols_dir`` pointing to the
+    created directories.
     """
     process_dir = tmp_path / "processes"
     historic_dir = tmp_path / "protocols_hystoric"
     connectivity_dir = tmp_path / "connectivity"
     log_dir = tmp_path / "log"
-    for d in (process_dir, historic_dir, connectivity_dir, log_dir):
+    protocols_dir = tmp_path / "protocols"
+    for d in (process_dir, historic_dir, connectivity_dir, log_dir, protocols_dir):
         d.mkdir()
     write_source(process_dir, "my_process.py", MINIMAL_PROCESS_SRC)
     write_source(process_dir, "main_parameters.py", MAIN_PARAMETERS_SRC)
@@ -59,4 +61,5 @@ def make_project_tree(tmp_path: Path) -> dict:
         "historic_dir": historic_dir,
         "connectivity_dir": connectivity_dir,
         "log_dir": log_dir,
+        "protocols_dir": protocols_dir,
     }

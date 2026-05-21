@@ -3,6 +3,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 
 from ..dependencies import get_protocol_service
+from ..schemas import LogSearchResult
 from ..services.protocol import ProtocolService
 
 router = APIRouter(prefix="/logs", tags=["logs"])
@@ -16,6 +17,29 @@ async def list_logs(svc: ProtocolService = Depends(get_protocol_service)):
     `.log` file in the project's `log/` directory, sorted most-recent first.
     """
     return svc.list_logs()
+
+
+@router.get("/search", response_model=list[LogSearchResult])
+async def search_logs(
+    query: str,
+    max_results: int = 50,
+    svc: ProtocolService = Depends(get_protocol_service),
+):
+    """Search all active log files for lines containing *query* (case-insensitive)."""
+    return svc.search_logs(query, max_results=max_results)
+
+
+@router.post("/{filename}/archive", status_code=200)
+async def archive_log(
+    filename: str,
+    svc: ProtocolService = Depends(get_protocol_service),
+):
+    """Move a log file from ``log/`` to ``log/archive/``."""
+    try:
+        archived_path = svc.archive_log(filename)
+        return {"archived": archived_path}
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
 
 
 @router.get("/{filename}")

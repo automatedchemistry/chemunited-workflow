@@ -39,3 +39,23 @@ class LogMeta(BaseModel):
     filename: str
     modified: str
     size_bytes: int
+
+
+class ProcessSource(BaseModel):
+    name: str
+    source: str
+
+
+class LogSearchResult(BaseModel):
+    filename: str
+    line_number: int
+    line: str
+
+
+class ComponentStatus(BaseModel):
+    component: str
+    url: str
+    online: bool
+    status_code: int | None = None
+    latency_ms: int | None = None
+    error: str | None = None

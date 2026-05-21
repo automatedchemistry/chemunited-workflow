@@ -67,7 +67,7 @@ async def delete_snapshot(
     Permanently removes the file from `protocols_hystoric/`. This action is
     irreversible. Only available in builder mode (`enable_builder=True`).
     """
-    path = svc._snapshot_dir / filename
-    if not path.exists():
-        raise HTTPException(status_code=404, detail=f"Snapshot '{filename}' not found.")
-    path.unlink()
+    try:
+        svc.delete_snapshot(filename)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))

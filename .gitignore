@@ -214,3 +214,6 @@ __marimo__/
 
 # complete
 .claude
+
+# pytest
+.pytest*

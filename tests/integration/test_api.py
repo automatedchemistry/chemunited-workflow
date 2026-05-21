@@ -39,9 +39,18 @@ def project(tmp_path):
     (dirs["historic_dir"] / "run_001.json").write_text(
         json.dumps(snapshot), encoding="utf-8"
     )
-    # Write a log file
+    # Write a log file used by existing tests
     (dirs["log_dir"] / "app.log").write_text(
         "\n".join(f"line {i}" for i in range(20)), encoding="utf-8"
+    )
+    # Write a searchable log file
+    (dirs["log_dir"] / "search.log").write_text(
+        "2026-05-15 INFO process started\n2026-05-15 INFO process finished\n",
+        encoding="utf-8",
+    )
+    # Write a process source file
+    (dirs["protocols_dir"] / "my_process.py").write_text(
+        "class MyProcess:\n    pass\n", encoding="utf-8"
     )
     return {"dirs": dirs, "tmp_path": tmp_path}
 
@@ -288,3 +297,107 @@ def test_pool_second_poll_returns_empty(client, project):
     r = client.get("/run/pool")
     assert r.status_code == 200
     assert r.json() == []
+
+
+# ── /processes/{name}/source ──────────────────────────────────────────────────
+
+def test_get_process_source_existing(client):
+    r = client.get("/processes/my_process/source")
+    assert r.status_code == 200
+    assert "source" in r.json()
+
+
+def test_get_process_source_not_found(client):
+    r = client.get("/processes/ghost/source")
+    assert r.status_code == 404
+
+
+def test_get_process_source_path_traversal(client):
+    # httpx normalises ../ in URLs before routing, so the request may return
+    # 400 (ValueError caught by handler) or 404 (route not matched after
+    # normalisation). Either proves the endpoint does not expose the file.
+    r = client.get("/processes/..%2Fconnectivity%2Fassociations/source")
+    assert r.status_code in (400, 404)
+
+
+# ── /snapshots DELETE (refactored) ────────────────────────────────────────────
+
+def test_delete_existing_snapshot(client, project):
+    r = client.delete("/snapshots/run_001.json")
+    assert r.status_code == 204
+    assert not (project["dirs"]["historic_dir"] / "run_001.json").exists()
+
+
+def test_delete_missing_snapshot(client):
+    r = client.delete("/snapshots/missing.json")
+    assert r.status_code == 404
+
+
+def test_delete_snapshot_builder_false(client_readonly, project):
+    r = client_readonly.delete("/snapshots/run_001.json")
+    assert r.status_code in (404, 405)
+
+
+# ── /logs/search ──────────────────────────────────────────────────────────────
+
+def test_search_logs_match(client):
+    r = client.get("/logs/search?query=started")
+    assert r.status_code == 200
+    data = r.json()
+    assert isinstance(data, list)
+    assert len(data) >= 1
+
+
+def test_search_logs_no_match(client):
+    r = client.get("/logs/search?query=zzznomatch")
+    assert r.status_code == 200
+    assert r.json() == []
+
+
+def test_search_logs_max_results(client):
+    r = client.get("/logs/search?query=line&max_results=1")
+    assert r.status_code == 200
+    assert len(r.json()) == 1
+
+
+# ── /logs/{filename}/archive ──────────────────────────────────────────────────
+
+def test_archive_existing_log(client, project):
+    r = client.post("/logs/app.log/archive")
+    assert r.status_code == 200
+    assert "archived" in r.json()
+    assert not (project["dirs"]["log_dir"] / "app.log").exists()
+
+
+def test_archive_missing_log(client):
+    r = client.post("/logs/missing.log/archive")
+    assert r.status_code == 404
+
+
+# ── /components/ping ─────────────────────────────────────────────────────────
+
+def test_ping_components_online(client, mocker):
+    mock_resp = mocker.MagicMock()
+    mock_resp.status_code = 200
+    mock_resp.elapsed.total_seconds.return_value = 0.05
+    mocker.patch(
+        "chemunited_workflow.api.services.protocol._requests.get",
+        return_value=mock_resp,
+    )
+    r = client.get("/components/ping")
+    assert r.status_code == 200
+    data = r.json()
+    assert all(entry["online"] for entry in data)
+
+
+def test_ping_components_offline(client, mocker):
+    import requests as req
+    mocker.patch(
+        "chemunited_workflow.api.services.protocol._requests.get",
+        side_effect=req.exceptions.ConnectionError("refused"),
+    )
+    r = client.get("/components/ping")
+    assert r.status_code == 200
+    data = r.json()
+    assert all(not entry["online"] for entry in data)
+    assert all(entry["error"] for entry in data)

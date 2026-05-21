@@ -3,9 +3,19 @@
 from fastapi import APIRouter, Depends
 
 from ..dependencies import get_protocol_service
+from ..schemas import ComponentStatus
 from ..services.protocol import ProtocolService
 
 router = APIRouter(prefix="/components", tags=["components"])
+
+
+@router.get("/ping", response_model=list[ComponentStatus])
+async def ping_components(
+    timeout: float = 2.0,
+    svc: ProtocolService = Depends(get_protocol_service),
+):
+    """Verify that all device URLs in ``associations.json`` are reachable."""
+    return svc.ping_components(timeout=timeout)
 
 
 @router.get("/")

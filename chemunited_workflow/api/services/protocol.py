@@ -8,6 +8,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+import requests as _requests
 from pydantic import BaseModel
 
 from chemunited_workflow import Process
@@ -101,6 +102,30 @@ class ProtocolService:
                 )
             self._configs[process_name].model_validate(params)
 
+    # ── Process source ───────────────────────────────────────────────────────
+
+    @property
+    def _protocols_dir(self) -> Path:
+        return self._project_dir / "protocols"
+
+    def read_process(self, name: str) -> str:
+        target = (self._protocols_dir / f"{name}.py").resolve()
+        if not target.is_relative_to(self._protocols_dir.resolve()):
+            raise ValueError(
+                f"Invalid process name '{name}': path traversal is not allowed."
+            )
+        if not target.exists():
+            raise FileNotFoundError(f"Process '{name}' not found.")
+        return target.read_text(encoding="utf-8")
+
+    # ── Snapshot delete ──────────────────────────────────────────────────────
+
+    def delete_snapshot(self, filename: str) -> None:
+        path = self._snapshot_dir / filename
+        if not path.exists():
+            raise FileNotFoundError(f"Snapshot '{filename}' not found.")
+        path.unlink()
+
     # ── Components ───────────────────────────────────────────────────────────
 
     def read_components(self) -> dict[str, Any]:
@@ -126,6 +151,75 @@ class ProtocolService:
                 reverse=True,
             )
         ]
+
+    def archive_log(self, filename: str) -> str:
+        source = self._log_dir / filename
+        if not source.exists():
+            raise FileNotFoundError(f"Log '{filename}' not found.")
+        archive_dir = self._log_dir / "archive"
+        archive_dir.mkdir(exist_ok=True)
+        destination = archive_dir / filename
+        source.rename(destination)
+        return f"archive/{filename}"
+
+    def search_logs(self, query: str, max_results: int = 50) -> list[dict[str, Any]]:
+        results: list[dict[str, Any]] = []
+        query_lower = query.lower()
+        log_files = sorted(
+            self._log_dir.glob("*.log"),
+            key=lambda p: p.stat().st_mtime,
+            reverse=True,
+        )
+        for log_file in log_files:
+            if len(results) >= max_results:
+                break
+            try:
+                for line_number, line in enumerate(
+                    log_file.read_text(encoding="utf-8", errors="replace").splitlines(),
+                    start=1,
+                ):
+                    if query_lower in line.lower():
+                        results.append({
+                            "filename": log_file.name,
+                            "line_number": line_number,
+                            "line": line.strip(),
+                        })
+                        if len(results) >= max_results:
+                            break
+            except OSError:
+                continue
+        return results
+
+    def ping_components(self, timeout: float = 2.0) -> list[dict[str, Any]]:
+        connectivity = self.read_components()
+        server_url = connectivity["server_url"].rstrip("/")
+        results = []
+        for assoc in connectivity["associations"]:
+            component_url = assoc.get("component_url", "").strip()
+            if not component_url:
+                continue
+            full_url = f"{server_url}/{component_url}"
+            entry: dict[str, Any] = {
+                "component": assoc["component"],
+                "url": full_url,
+                "online": False,
+                "status_code": None,
+                "latency_ms": None,
+                "error": None,
+            }
+            try:
+                response = _requests.get(full_url, timeout=timeout)
+                entry["online"] = True
+                entry["status_code"] = response.status_code
+                entry["latency_ms"] = round(response.elapsed.total_seconds() * 1000)
+            except _requests.exceptions.ConnectionError as exc:
+                entry["error"] = f"ConnectionError: {exc}"
+            except _requests.exceptions.Timeout:
+                entry["error"] = f"Timeout after {timeout}s"
+            except _requests.exceptions.RequestException as exc:
+                entry["error"] = str(exc)
+            results.append(entry)
+        return results
 
     def read_log(self, filename: str, tail: int | None = None) -> str:
         log_dir = self._log_dir.resolve()

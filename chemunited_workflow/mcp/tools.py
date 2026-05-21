@@ -106,6 +106,64 @@ def register_tools(
         return {"cancelled": ok}
 
     @mcp.tool()
+    def read_process(name: str) -> dict:
+        """Return the full source code of a process definition file.
+
+        Parameters
+        ----------
+        name:
+            Stem of the process file (without ``.py``), e.g. ``"clean"`` or
+            ``"react"``.  Use ``list_processes`` to discover available names.
+        """
+        try:
+            source = protocol.read_process(name)
+            return {"name": name, "source": source}
+        except (FileNotFoundError, ValueError) as exc:
+            return {"error": str(exc)}
+
+    @mcp.tool()
+    def delete_snapshot(filename: str) -> dict:
+        """Permanently delete a protocol snapshot from ``protocols_hystoric/``.
+
+        This action is irreversible. Use ``list_snapshots`` to discover filenames.
+        """
+        try:
+            protocol.delete_snapshot(filename)
+            return {"deleted": filename}
+        except FileNotFoundError as exc:
+            return {"error": str(exc)}
+
+    @mcp.tool()
+    def archive_log(filename: str) -> dict:
+        """Move a log file from ``log/`` into ``log/archive/``.
+
+        Use ``list_logs`` to discover available filenames.
+        """
+        try:
+            archived_path = protocol.archive_log(filename)
+            return {"archived": archived_path}
+        except FileNotFoundError as exc:
+            return {"error": str(exc)}
+
+    @mcp.tool()
+    def search_logs(query: str, max_results: int = 50) -> list[dict]:
+        """Search all active log files for lines containing *query*.
+
+        Case-insensitive. Returns up to *max_results* entries, each with
+        ``filename``, ``line_number``, and ``line``.
+        """
+        return protocol.search_logs(query, max_results=max_results)
+
+    @mcp.tool()
+    def ping_components(timeout: float = 2.0) -> list[dict]:
+        """Verify that all device URLs in ``associations.json`` are reachable.
+
+        Each entry reports ``component``, ``url``, ``online``, ``status_code``,
+        ``latency_ms``, and ``error``.
+        """
+        return protocol.ping_components(timeout=timeout)
+
+    @mcp.tool()
     def get_components() -> dict:
         """Return the full connectivity/associations.json — the device-to-URL
         mapping for the current machine."""
