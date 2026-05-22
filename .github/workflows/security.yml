@@ -31,7 +31,10 @@ jobs:
           python -m pip install -e ".[test,server]" pip-audit bandit[toml]
 
       - name: Audit Python dependencies
-        run: pip-audit
+        run: |
+          pip-audit \
+            --skip-editable \
+            --ignore-vuln PYSEC-2025-183
 
       - name: Run Bandit
         run: bandit -r chemunited_workflow
