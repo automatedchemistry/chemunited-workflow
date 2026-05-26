@@ -105,7 +105,6 @@ A typical project using this library looks like:
 
 ```
 my_project/
-├── __main__.py                  # CLI entry point
 ├── protocols/
 │   ├── __init__.py              # PROCESSES and CONFIGS dicts
 │   ├── main_parameters.py       # MainParameter Pydantic model
@@ -128,23 +127,23 @@ CONFIGS   = {"my_workflow": MyConfig}
 
 ## Deployment Modes
 
-The `__main__.py` entry point supports several modes:
+Use the `chemunited-workflow` CLI, passing your project directory as the first argument:
 
 ```bash
 # FastAPI server — interactive API at http://127.0.0.1:3116/docs
-python -m my_project --fastapi --port 3116
+chemunited-workflow my_project --fastapi --port 3116
 
 # Execute a specific saved snapshot directly
-python -m my_project protocols_hystoric/snapshot_20250101T120000.json
+chemunited-workflow my_project my_project/protocols_hystoric/snapshot_20250101T120000.json
 
 # MCP server — expose workflows as tools to Claude or other agents
-python -m my_project --mcp
+chemunited-workflow my_project --mcp
 
 # MCP server over streamable HTTP, exposed at http://127.0.0.1:3117/mcp
-python -m my_project --mcp-http --port 3117
+chemunited-workflow my_project --mcp-http --port 3117
 
 # Development with auto-reload
-python -m my_project --fastapi --reload
+chemunited-workflow my_project --fastapi --reload
 ```
 
 ### MCP stdio
@@ -157,27 +156,22 @@ communicates through the process stdin/stdout streams:
 {
   "mcpServers": {
     "chemunited-workflow": {
-      "command": "python",
-      "args": ["-m", "my_project", "--mcp"],
-      "cwd": "/absolute/path/to/parent-of-my_project"
+      "command": "chemunited-workflow",
+      "args": ["/absolute/path/to/my_project", "--mcp"]
     }
   }
 }
 ```
 
-If you want the client to use a virtual environment, point `command` directly
-at that environment's Python executable:
+If you want to pin to a specific virtual environment, point `command` at that
+environment's script:
 
 ```json
 {
   "mcpServers": {
     "chemunited-workflow": {
-      "command": "/absolute/path/to/.venv/bin/python",
-      "args": ["-m", "my_project", "--mcp"],
-      "cwd": "/absolute/path/to/parent-of-my_project",
-      "env": {
-        "PYTHONPATH": "/absolute/path/to/my_project"
-      }
+      "command": "/absolute/path/to/.venv/bin/chemunited-workflow",
+      "args": ["/absolute/path/to/my_project", "--mcp"]
     }
   }
 }
@@ -190,24 +184,12 @@ checked out at `D:\Projects\chemunited-workflow`:
 {
   "mcpServers": {
     "chemunited-workflow": {
-      "command": "D:\\Projects\\chemunited-workflow\\.venv\\Scripts\\python.exe",
-      "args": ["-m", "custom_project", "--mcp"],
-      "cwd": "D:\\Projects\\chemunited-workflow\\examples",
-      "env": {
-        "PYTHONPATH": "D:\\Projects\\chemunited-workflow\\examples\\custom_project"
-      }
+      "command": "D:\\Projects\\chemunited-workflow\\.venv\\Scripts\\chemunited-workflow.exe",
+      "args": ["D:\\Projects\\chemunited-workflow\\examples\\custom_project", "--mcp"]
     }
   }
 }
 ```
-
-The `PYTHONPATH` entry is needed for this example project because
-`custom_project` imports its internal `protocols` package as a top-level module.
-If your own project uses package-relative imports or is installed as a package,
-you may not need this extra environment variable. If your MCP client reports
-`ModuleNotFoundError: No module named 'protocols'`, add the `PYTHONPATH` entry
-shown above.
-
 
 ### MCP HTTP
 
@@ -215,7 +197,7 @@ Use streamable HTTP when your MCP client asks for a URL or when you want the
 server to run independently of the LLM client process:
 
 ```bash
-python -m my_project --mcp-http --host 127.0.0.1 --port 3117
+chemunited-workflow my_project --mcp-http --host 127.0.0.1 --port 3117
 ```
 
 The MCP HTTP address is:
@@ -227,15 +209,13 @@ http://127.0.0.1:3117/mcp
 For the included example project on Windows:
 
 ```bash
-cd D:\Projects\chemunited-workflow\examples
-set PYTHONPATH=D:\Projects\chemunited-workflow\examples\custom_project
-..\.venv\Scripts\python.exe -m custom_project --mcp-http --port 3117
+.venv\Scripts\chemunited-workflow.exe examples\custom_project --mcp-http --port 3117
 ```
 
 Use `--mcp-path` to change the endpoint path:
 
 ```bash
-python -m my_project --mcp-http --port 3117 --mcp-path /chemunited-mcp
+chemunited-workflow my_project --mcp-http --port 3117 --mcp-path /chemunited-mcp
 ```
 
 Then the address becomes `http://127.0.0.1:3117/chemunited-mcp`.

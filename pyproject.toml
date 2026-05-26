@@ -32,6 +32,9 @@ test = [
     "httpx>=0.27",
 ]
 
+[project.scripts]
+chemunited-workflow = "chemunited_workflow.cli:main"
+
 [tool.setuptools]
 packages = [
     "chemunited_workflow",
