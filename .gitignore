@@ -218,4 +218,5 @@ instructions
 
 # pytest
 pytest-cache*
+.pre-commit-cache*
 
