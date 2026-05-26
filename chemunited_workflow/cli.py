@@ -76,20 +76,46 @@ def _load_project(project_dir: Path) -> _ProjectModules:
     required=False,
     type=click.Path(exists=True, path_type=Path),
 )
-@click.option("--fastapi", "mode", flag_value="fastapi", default=True,
-              help="Start the FastAPI server (default).")
-@click.option("--mcp", "mode", flag_value="mcp",
-              help="Start the MCP server over stdio.")
-@click.option("--mcp-http", "mode", flag_value="mcp_http",
-              help="Start the MCP server over streamable HTTP.")
-@click.option("--host", default="127.0.0.1", show_default=True,
-              help="Bind host for FastAPI or MCP HTTP.")
-@click.option("--port", default=None, type=int,
-              help="Bind port. Defaults: FastAPI 3116, MCP HTTP 3117.")
-@click.option("--mcp-path", default="/mcp", show_default=True,
-              help="HTTP path for the MCP streamable HTTP endpoint.")
-@click.option("--reload", is_flag=True, default=False,
-              help="Enable auto-reload (development only, FastAPI only).")
+@click.option(
+    "--fastapi",
+    "mode",
+    flag_value="fastapi",
+    default=True,
+    help="Start the FastAPI server (default).",
+)
+@click.option(
+    "--mcp", "mode", flag_value="mcp", help="Start the MCP server over stdio."
+)
+@click.option(
+    "--mcp-http",
+    "mode",
+    flag_value="mcp_http",
+    help="Start the MCP server over streamable HTTP.",
+)
+@click.option(
+    "--host",
+    default="127.0.0.1",
+    show_default=True,
+    help="Bind host for FastAPI or MCP HTTP.",
+)
+@click.option(
+    "--port",
+    default=None,
+    type=int,
+    help="Bind port. Defaults: FastAPI 3116, MCP HTTP 3117.",
+)
+@click.option(
+    "--mcp-path",
+    default="/mcp",
+    show_default=True,
+    help="HTTP path for the MCP streamable HTTP endpoint.",
+)
+@click.option(
+    "--reload",
+    is_flag=True,
+    default=False,
+    help="Enable auto-reload (development only, FastAPI only).",
+)
 def main(
     project_dir: Path,
     snapshot: Path | None,
