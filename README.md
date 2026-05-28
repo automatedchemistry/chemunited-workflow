@@ -249,19 +249,32 @@ When running in `--fastapi` mode the following endpoints are available.
 
 | Method | Path | Description |
 |--------|------|-------------|
-| `POST` | `/run/` | Start a workflow run from a snapshot |
-| `GET` | `/run/{run_id}/status` | Poll run state and events |
+| `POST` | `/run/` | Start a workflow run from a snapshot. Body: `{"snapshot": "<snapshot filename>", "dry_run": false}`. `snapshot` is required; `dry_run` defaults to `false`. Returns HTTP `202` with a `run_id`. |
+| `GET` | `/run/active` | Return the active run id as `{"run_id": "<id>"}` or `{"run_id": null}` |
+| `GET` | `/run/{run_id}/status` | Poll run state and events. Events are cleared after each read; terminal states are `finished`, `failed`, and `cancelled`. |
 | `GET` | `/run/{run_id}/report` | Full execution report for a finished run |
 | `DELETE` | `/run/{run_id}` | Cancel an active run |
-| `GET` | `/run/pool` | Poll pending device commands (device-side polling) |
+| `GET` | `/run/{run_id}/stream` | Stream workflow events for a run |
+| `GET` | `/run/pool` | Drain pending device commands and delete their pool files; returns an empty list when no commands are pending |
+
+Example `POST /run/` request:
+
+```json
+{
+  "snapshot": "snapshot_20250101T120000.json",
+  "dry_run": false
+}
+```
+
+Use `dry_run: true` to simulate device calls. The workflow graph and node logic still run, but physical HTTP calls are suppressed.
 
 ### Logs
 
 | Method | Path | Description |
 |--------|------|-------------|
-| `GET` | `/logs/` | List log files (most recent first) |
-| `GET` | `/logs/search?query=...&max_results=50` | Search all log files (case-insensitive) |
-| `GET` | `/logs/{filename}?tail=N` | Read a log file (optional last-N-lines) |
+| `GET` | `/logs/` | List log file metadata, sorted most recent first |
+| `GET` | `/logs/search?query=...&max_results=50` | Search all active log files for matching lines, case-insensitive |
+| `GET` | `/logs/{filename}?tail=N` | Read a log file. `tail` is optional and returns only the last `N` lines. |
 | `POST` | `/logs/{filename}/archive` | Move a log to `log/archive/` |
 
 ### Components
