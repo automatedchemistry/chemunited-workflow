@@ -158,7 +158,6 @@ class CustomProcess(Process[ProcessConfig]):
 
     def start(self, ctx: NodeExecutionContext) -> bool:
         ctx.runtime.status_message = "Started."
-        sleep(8)
         return True
 
     def finish(self, ctx: NodeExecutionContext) -> bool:
@@ -178,9 +177,16 @@ class CustomProcess(Process[ProcessConfig]):
         return True
 
     def command_1(self, ctx: NodeExecutionContext) -> bool:
+        from loguru import logger
+        
+        ctx.runtime.status_message = "Command 1 ran."
+        
+        logger.info("Process clean: Command 1 started.")
         self.platform["AS injection"].put(
             "position",
             connect="[[1, 2]]",
             disconnect="",
+            wait_time=30,
         )
+        logger.info("Process clean: Command 1 finished.")
         return True
