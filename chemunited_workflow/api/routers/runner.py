@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import asyncio
 import json
+import time
+from collections.abc import AsyncIterator
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
@@ -14,6 +16,8 @@ from ..schemas import RunRequest, RunStatus
 from ..services.runner import RunnerService
 
 router = APIRouter(prefix="/run", tags=["run"])
+STREAM_POLL_INTERVAL_SECONDS = 0.1
+STREAM_HEARTBEAT_INTERVAL_SECONDS = 5.0
 
 
 @router.post("/", status_code=202)
@@ -107,18 +111,44 @@ async def stream_run(
     For simple polling without a persistent connection, use `/status` instead.
     """
 
-    async def generate():
-        rec = svc._run_store.get(run_id)
-        if rec is None:
-            yield 'data: {"error": "run not found"}\n\n'
-            return
-        while rec.state.value == "running":
-            for event in svc._run_store.pop_events(run_id):
-                yield f"data: {event.model_dump_json()}\n\n"
-            await asyncio.sleep(0.1)
-        yield f'data: {{"state": "{rec.state.value}"}}\n\n'
+    return StreamingResponse(
+        _generate_run_stream(svc, run_id),
+        media_type="text/event-stream",
+    )
 
-    return StreamingResponse(generate(), media_type="text/event-stream")
+
+async def _generate_run_stream(
+    svc: RunnerService,
+    run_id: str,
+    *,
+    poll_interval: float = STREAM_POLL_INTERVAL_SECONDS,
+    heartbeat_interval: float = STREAM_HEARTBEAT_INTERVAL_SECONDS,
+) -> AsyncIterator[str]:
+    rec = svc._run_store.get(run_id)
+    if rec is None:
+        yield 'data: {"error": "run not found"}\n\n'
+        return
+
+    last_sent = time.monotonic()
+    while rec.state == RunState.RUNNING:
+        sent_event = False
+        for event in svc._run_store.pop_events(run_id):
+            yield f"data: {event.model_dump_json()}\n\n"
+            sent_event = True
+
+        now = time.monotonic()
+        if sent_event:
+            last_sent = now
+        elif (
+            rec.state == RunState.RUNNING
+            and now - last_sent >= heartbeat_interval
+        ):
+            yield ": heartbeat\n\n"
+            last_sent = now
+
+        await asyncio.sleep(poll_interval)
+
+    yield f'data: {{"state": "{rec.state.value}"}}\n\n'
 
 
 @router.get("/pool")
