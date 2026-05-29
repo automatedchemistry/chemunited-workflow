@@ -2,7 +2,9 @@
 
 from typing import Any
 
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
+
+from chemunited_workflow.durations import parse_timeout_commands
 
 
 class ProcessInfo(BaseModel):
@@ -27,6 +29,13 @@ class SnapshotIn(BaseModel):
 class RunRequest(BaseModel):
     snapshot: str
     dry_run: bool = False
+    timeout_commands: str = "10 s"
+
+    @field_validator("timeout_commands")
+    @classmethod
+    def validate_timeout_commands(cls, value: str) -> str:
+        parse_timeout_commands(value)
+        return value.strip()
 
 
 class RunStatus(BaseModel):

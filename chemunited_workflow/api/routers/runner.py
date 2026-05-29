@@ -27,9 +27,14 @@ async def start_run(
     immediately (HTTP 202 Accepted). Pass `dry_run: true` to suppress all
     HTTP calls to physical devices — the workflow graph and node logic run
     normally but every device call returns a synthetic `200 OK` with an empty
-    body. Use the returned `run_id` to poll status or stream events.
+    body. `timeout_commands` controls feedback polling timeout. Use the
+    returned `run_id` to poll status or stream events.
     """
-    run_id = svc.start(body.snapshot, dry_run=body.dry_run)
+    run_id = svc.start(
+        body.snapshot,
+        dry_run=body.dry_run,
+        timeout_commands=body.timeout_commands,
+    )
     return {"run_id": run_id}
 
 

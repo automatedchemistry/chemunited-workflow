@@ -51,6 +51,15 @@ def test_from_connectivity_loads_pump_skips_sensor():
     assert p["pump"].base_url == "http://device-server:8000/sim-ml600/pump"
 
 
+def test_from_connectivity_passes_timeout_commands_to_clients():
+    p = Platform.from_connectivity(
+        FIXTURES / "associations.json",
+        timeout_commands="5 s",
+    )
+    assert p["pump"].timeout_commands == "5 s"
+    assert p["pump"]._feedback_timeout == 5.0
+
+
 def test_from_connectivity_missing_server_url_raises(tmp_path):
     bad = tmp_path / "bad.json"
     bad.write_text(json.dumps({"associations": []}), encoding="utf-8")

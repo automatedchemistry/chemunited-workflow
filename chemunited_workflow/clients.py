@@ -13,6 +13,7 @@ import requests
 from loguru import logger
 from pydantic import AnyHttpUrl
 
+from .durations import parse_timeout_commands
 from .exceptions import ConcurrentClientAccessError
 
 
@@ -147,11 +148,15 @@ class ComponentClient(BaseClient):
         component_ui: str = "undefined",
         dry_run: bool = False,
         pool_json_log: Path | None = None,
+        timeout_commands: str = "10 s",
     ) -> None:
         super().__init__(url, dry_run=dry_run)
+        feedback_timeout = parse_timeout_commands(timeout_commands)
         self._access_lock = threading.Lock()
         self.component_ui = component_ui
         self.pool_json_log = pool_json_log
+        self.timeout_commands = timeout_commands.strip()
+        self._feedback_timeout = feedback_timeout
 
     def _write_json_log(self, data: dict[str, Any]) -> None:
         if self.pool_json_log is None:
@@ -265,7 +270,11 @@ class ComponentClient(BaseClient):
         if wait_time > 0:
             time.sleep(wait_time)
         if wait_feedback_status and feedback_status_command:
-            self._poll_feedback(feedback_status_command, feedback_answer)
+            self._poll_feedback(
+                feedback_status_command,
+                feedback_answer,
+                timeout=self._feedback_timeout,
+            )
 
     def _poll_feedback(
         self,
@@ -273,10 +282,10 @@ class ComponentClient(BaseClient):
         expected: str,
         *,
         interval: float = 1.0,
-        timeout: float = 10.0,
+        timeout: float | None = 10.0,
     ) -> None:
-        deadline = time.monotonic() + timeout
-        while time.monotonic() < deadline:
+        deadline = None if timeout is None else time.monotonic() + timeout
+        while deadline is None or time.monotonic() < deadline:
             resp = super().get(status_command)
             if resp.text.strip() == expected:
                 return

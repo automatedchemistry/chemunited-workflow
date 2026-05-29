@@ -9,10 +9,31 @@ import requests
 import responses as resp_lib
 
 from chemunited_workflow.clients import BaseClient, ComponentClient
+from chemunited_workflow.durations import parse_timeout_commands
 from chemunited_workflow.exceptions import ConcurrentClientAccessError
 
-
 BASE_URL = "http://device-server:8000"
+
+
+# timeout_commands parsing
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        ("5 s", 5.0),
+        ("2 min", 120.0),
+        ("", None),
+    ],
+)
+def test_parse_timeout_commands(value, expected):
+    assert parse_timeout_commands(value) == expected
+
+
+@pytest.mark.parametrize("value", ["invalid", "5 ml", "-1 s"])
+def test_parse_timeout_commands_rejects_invalid_values(value):
+    with pytest.raises(ValueError):
+        parse_timeout_commands(value)
 
 
 # ── _build_url ────────────────────────────────────────────────────────────────
@@ -91,6 +112,36 @@ def test_component_client_sequential_calls_succeed():
     r2 = client.get("/x")
     assert r1.status_code == 200
     assert r2.status_code == 200
+
+
+def test_poll_feedback_raises_after_custom_timeout(mocker):
+    response = requests.Response()
+    response.status_code = 200
+    response._content = b"false"
+    mocker.patch.object(BaseClient, "get", return_value=response)
+
+    client = ComponentClient(BASE_URL)
+    with pytest.raises(TimeoutError, match="0.01"):
+        client._poll_feedback("is-ready", "true", interval=0, timeout=0.01)
+
+
+def test_poll_feedback_without_timeout_runs_until_expected(mocker):
+    answers = iter(["false", "false", "true"])
+    calls = []
+
+    def fake_get(self, path):
+        calls.append(path)
+        response = requests.Response()
+        response.status_code = 200
+        response._content = next(answers).encode()
+        return response
+
+    mocker.patch.object(BaseClient, "get", new=fake_get)
+
+    client = ComponentClient(BASE_URL, timeout_commands="")
+    client._poll_feedback("is-ready", "true", interval=0, timeout=None)
+
+    assert calls == ["is-ready", "is-ready", "is-ready"]
 
 
 # ── ComponentClient: concurrency guard ───────────────────────────────────────

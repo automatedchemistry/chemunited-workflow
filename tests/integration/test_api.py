@@ -180,6 +180,23 @@ def test_start_run_returns_run_id(client):
     assert "run_id" in r.json()
 
 
+def test_start_run_accepts_timeout_commands(client):
+    r = client.post(
+        "/run/",
+        json={"snapshot": "run_001.json", "timeout_commands": "5 s"},
+    )
+    assert r.status_code == 202
+    assert "run_id" in r.json()
+
+
+def test_start_run_rejects_invalid_timeout_commands(client):
+    r = client.post(
+        "/run/",
+        json={"snapshot": "run_001.json", "timeout_commands": "5 ml"},
+    )
+    assert r.status_code == 422
+
+
 def test_poll_run_status(client):
     r = client.post("/run/", json={"snapshot": "run_001.json"})
     run_id = r.json()["run_id"]

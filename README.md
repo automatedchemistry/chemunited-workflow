@@ -255,6 +255,10 @@ When running in `--fastapi` mode the following endpoints are available.
 | `DELETE` | `/run/{run_id}` | Cancel an active run |
 | `GET` | `/run/pool` | Poll pending device commands (device-side polling) |
 
+`POST /run/` accepts `timeout_commands` in the JSON body. Use values such as
+`"5 s"` or `"2 min"` to control feedback polling timeout; omit it for the
+default `"10 s"`, or pass `""` to poll without a timeout.
+
 ### Logs
 
 | Method | Path | Description |

@@ -11,6 +11,7 @@ from loguru import logger
 from pydantic import BaseModel
 
 from chemunited_workflow import Process, WorkflowExecutor, compile_workflow
+from chemunited_workflow.durations import parse_timeout_commands
 from chemunited_workflow.platform import Platform
 from chemunited_workflow.terminal import WorkflowLogger, create_run_log_path
 
@@ -30,7 +31,13 @@ class RunnerService:
         self._configs = configs
         self._run_store = run_store
 
-    def start(self, snapshot_filename: str, *, dry_run: bool = False) -> str:
+    def start(
+        self,
+        snapshot_filename: str,
+        *,
+        dry_run: bool = False,
+        timeout_commands: str = "10 s",
+    ) -> str:
         """Launch execution in a background thread. Returns run_id immediately.
 
         Parameters
@@ -38,14 +45,25 @@ class RunnerService:
         dry_run:
             When ``True``, all HTTP calls to devices are suppressed. The workflow
             graph, node logic, and concurrency guard run normally.
+        timeout_commands:
+            Feedback polling timeout, such as ``"10 s"``. Empty string disables
+            the timeout.
         """
+        parse_timeout_commands(timeout_commands)
         snapshot_path = self._project_dir / "protocols_hystoric" / snapshot_filename
         data = json.loads(snapshot_path.read_text(encoding="utf-8"))
         sequence = self._parse_sequence(data)
         run_id = self._run_store.create()
         thread = threading.Thread(
             target=self._execute,
-            args=(run_id, snapshot_filename, sequence, data, dry_run),
+            args=(
+                run_id,
+                snapshot_filename,
+                sequence,
+                data,
+                dry_run,
+                timeout_commands,
+            ),
             daemon=True,
         )
         thread.start()
@@ -58,6 +76,7 @@ class RunnerService:
         sequence: list[tuple[str, int]],
         data: dict,
         dry_run: bool,
+        timeout_commands: str,
     ) -> None:
         log_path = create_run_log_path(self._project_dir, snapshot_filename)
         log_path.parent.mkdir(parents=True, exist_ok=True)
@@ -77,6 +96,7 @@ class RunnerService:
                 self._project_dir,
                 dry_run=dry_run,
                 log_dir=self._project_dir / "log",
+                timeout_commands=timeout_commands,
             )
             for process_name, process_index in sequence:
                 record = self._run_store.get(run_id)
