@@ -36,7 +36,7 @@ class RunRequest(BaseModel):
         default=False,
         title="Dry execution",
         description=(
-            "If true, only log the commands without executing them. "
+            "If true, only log the commands without executing them.\n"
             "Useful to validate the snapshot order and parameters before running."
         ),
     )
@@ -44,9 +44,9 @@ class RunRequest(BaseModel):
         default="10 s",
         title="Timeout duration to wait the command feedback",
         description=(
-            "Timeout duration to wait the command feedback after wait_time finished. "
-            "If timeout_commands is set to an empty string, the protocol will wait "
-            "indefinitely for the feedback from the device. Accepted format: "
+            "Timeout duration to wait the command feedback after wait_time finished.\n"
+            "If timeout_commands is set to an empty string, the protocol will wait\n"
+            "indefinitely for the feedback from the device. Accepted format:\n"
             "<value> <unit>, where unit can be 's' (seconds)."
         ),
     )
