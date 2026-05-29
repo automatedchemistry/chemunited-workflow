@@ -2,7 +2,7 @@
 
 from typing import Any
 
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, field_validator, Field
 
 from chemunited_workflow.durations import parse_timeout_commands
 
@@ -27,9 +27,29 @@ class SnapshotIn(BaseModel):
 
 
 class RunRequest(BaseModel):
-    snapshot: str
-    dry_run: bool = False
-    timeout_commands: str = "10 s"
+    snapshot: str = Field(
+        default="",
+        title="Snapshot name to run",
+        description="Snapshot json file containing the process order and parameters",
+    )
+    dry_run: bool = Field(
+        default=False,
+        title="Dry execution",
+        description=(
+            "If true, only log the commands without executing them. "
+            "Useful to validate the snapshot order and parameters before running."
+        ),
+    )
+    timeout_commands: str = Field(
+        default="10 s",
+        title="Timeout duration to wait the command feedback",
+        description=(
+            "Timeout duration to wait the command feedback after wait_time finished. "
+            "If timeout_commands is set to an empty string, the protocol will wait "
+            "indefinitely for the feedback from the device. Accepted format: "
+            "<value> <unit>, where unit can be 's' (seconds)."
+        ),
+    )
 
     @field_validator("timeout_commands")
     @classmethod
