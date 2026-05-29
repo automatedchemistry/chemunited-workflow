@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import json
 import threading
+from dataclasses import dataclass
 
 import pytest
 import requests
@@ -11,6 +13,7 @@ import responses as resp_lib
 from chemunited_workflow.clients import BaseClient, ComponentClient
 from chemunited_workflow.durations import parse_timeout_commands
 from chemunited_workflow.exceptions import ConcurrentClientAccessError
+from chemunited_workflow.quantity import ChemUnitQuantity
 
 BASE_URL = "http://device-server:8000"
 
@@ -224,8 +227,6 @@ def test_write_json_log_writes_expected_keys(tmp_path):
             "params": {"volume": 5},
         }
     )
-    import json
-
     record = json.loads(log_path.read_text(encoding="utf-8").strip())
     assert record["method"] == "PUT"
     assert record["command"] == "/dose"
@@ -234,8 +235,6 @@ def test_write_json_log_writes_expected_keys(tmp_path):
 
 
 def test_write_json_log_appends_multiple_lines(tmp_path):
-    import json
-
     log_path = tmp_path / "pump.jsonl"
     client = ComponentClient(BASE_URL, pool_json_log=log_path)
     client._write_json_log(
@@ -271,11 +270,103 @@ def test_write_json_log_called_before_request_dry_run(tmp_path):
 
 
 def test_write_json_log_written_in_dry_run(tmp_path):
-    import json
-
     log_path = tmp_path / "pump.jsonl"
     client = ComponentClient(BASE_URL, dry_run=True, pool_json_log=log_path)
     client.put("/dose", volume=3)
     record = json.loads(log_path.read_text(encoding="utf-8").strip())
     assert record["method"] == "PUT"
     assert record["command"] == "/dose"
+
+
+def test_write_json_log_with_quantity_params_writes_valid_jsonl(tmp_path):
+    log_path = tmp_path / "pump.jsonl"
+    client = ComponentClient(BASE_URL, pool_json_log=log_path)
+
+    client._write_json_log(
+        {
+            "method": "PUT",
+            "command": "/withdraw",
+            "component": "pump",
+            "params": {
+                "volume": ChemUnitQuantity(1, "ml"),
+                "rate": ChemUnitQuantity(2.0, "ml/min"),
+            },
+        }
+    )
+
+    record = json.loads(log_path.read_text(encoding="utf-8").strip())
+    assert record["params"] == {
+        "volume": "1 milliliter",
+        "rate": "2.0 milliliter / minute",
+    }
+
+
+def test_component_client_put_dry_run_accepts_quantity_params():
+    client = ComponentClient(BASE_URL, dry_run=True)
+
+    response = client.put(
+        "/withdraw",
+        rate="4 ml/min",
+        volume=ChemUnitQuantity(1, "ml"),
+    )
+
+    assert response.status_code == 200
+
+
+def test_component_client_put_normalizes_nested_quantity_params(tmp_path):
+    @dataclass
+    class CommandMetadata:
+        path: object
+        target: object
+
+    log_path = tmp_path / "pump.jsonl"
+    client = ComponentClient(BASE_URL, dry_run=True, pool_json_log=log_path)
+
+    client.put(
+        "/withdraw",
+        recipe={
+            "steps": [
+                {"volume": ChemUnitQuantity(1, "ml")},
+                {"rate": ChemUnitQuantity(2.0, "ml/min")},
+            ],
+            "metadata": CommandMetadata(
+                path=tmp_path / "recipe.json",
+                target=ChemUnitQuantity(3, "ml"),
+            ),
+        },
+    )
+
+    record = json.loads(log_path.read_text(encoding="utf-8").strip())
+    assert record["params"]["recipe"] == {
+        "steps": [
+            {"volume": "1 milliliter"},
+            {"rate": "2.0 milliliter / minute"},
+        ],
+        "metadata": {
+            "path": str(tmp_path / "recipe.json"),
+            "target": "3 milliliter",
+        },
+    }
+
+
+def test_component_client_put_passes_safe_params_to_base_client(mocker):
+    captured: dict[str, object] = {}
+
+    def fake_put(self, path, *, params=None, json=None, **kwargs):
+        captured["params"] = params
+        captured["json"] = json
+        response = requests.Response()
+        response.status_code = 200
+        return response
+
+    mocker.patch.object(BaseClient, "put", new=fake_put)
+    client = ComponentClient(BASE_URL)
+
+    client.put(
+        "/withdraw",
+        params={"volume": ChemUnitQuantity(1, "ml")},
+        json={"rate": ChemUnitQuantity(2.0, "ml/min")},
+    )
+
+    assert captured["params"] == {"volume": "1 milliliter"}
+    assert captured["json"] == {"rate": "2.0 milliliter / minute"}

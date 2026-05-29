@@ -6,6 +6,7 @@ import json
 import threading
 import time
 from collections.abc import Mapping
+from dataclasses import asdict, is_dataclass
 from pathlib import Path
 from typing import Any
 
@@ -15,6 +16,23 @@ from pydantic import AnyHttpUrl
 
 from .durations import parse_timeout_commands
 from .exceptions import ConcurrentClientAccessError
+
+
+def _json_safe(value: Any) -> Any:
+    """Convert JSON-like values into a shape safe for logs and requests."""
+    if isinstance(value, Mapping):
+        return {str(key): _json_safe(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple, set)):
+        return [_json_safe(item) for item in value]
+    if is_dataclass(value) and not isinstance(value, type):
+        return _json_safe(asdict(value))
+    if isinstance(value, Path):
+        return str(value)
+    try:
+        json.dumps(value)
+    except TypeError:
+        return str(value)
+    return value
 
 
 class BaseClient:
@@ -163,7 +181,7 @@ class ComponentClient(BaseClient):
             return
         self.pool_json_log.parent.mkdir(parents=True, exist_ok=True)
         with self.pool_json_log.open("a", encoding="utf-8") as fh:
-            fh.write(json.dumps(data) + "\n")
+            fh.write(json.dumps(_json_safe(data)) + "\n")
 
     def _request(self, method: str, path: str, **kwargs) -> requests.Response:
         if not self._access_lock.acquire(blocking=False):
@@ -206,19 +224,21 @@ class ComponentClient(BaseClient):
         **command_params: Any,
     ) -> requests.Response:
         query_params = self._merge_query_params(params, command_params)
+        safe_query_params = _json_safe(query_params)
+        safe_json = _json_safe(json) if json is not None else None
         self._write_json_log(
             {
                 "component": self.component_ui,
                 "method": "PUT",
                 "command": path,
-                "params": query_params,
+                "params": safe_query_params,
                 "wait_time": wait_time,
                 "wait_feedback_status": wait_feedback_status,
                 "feedback_status_command": feedback_status_command,
                 "feedback_answer": feedback_answer,
             }
         )
-        resp = super().put(path, params=query_params, json=json)
+        resp = super().put(path, params=safe_query_params, json=safe_json)
         self._execute_post_command(
             wait_time,
             wait_feedback_status,
@@ -239,19 +259,20 @@ class ComponentClient(BaseClient):
         **command_params: Any,
     ) -> requests.Response:
         query_params = self._merge_query_params(params, command_params)
+        safe_query_params = _json_safe(query_params)
         self._write_json_log(
             {
                 "component": self.component_ui,
                 "method": "GET",
                 "command": path,
-                "params": query_params,
+                "params": safe_query_params,
                 "wait_time": wait_time,
                 "wait_feedback_status": wait_feedback_status,
                 "feedback_status_command": feedback_status_command,
                 "feedback_answer": feedback_answer,
             }
         )
-        resp = super().get(path, params=query_params)
+        resp = super().get(path, params=safe_query_params)
         self._execute_post_command(
             wait_time,
             wait_feedback_status,
