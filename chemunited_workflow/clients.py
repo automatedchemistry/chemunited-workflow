@@ -18,6 +18,21 @@ from .durations import parse_timeout_commands
 from .exceptions import ConcurrentClientAccessError
 
 
+_thread_resilient_errors = threading.local()
+
+
+def _push_thread_resilient_error(exc: Exception) -> None:
+    if not hasattr(_thread_resilient_errors, "errors"):
+        _thread_resilient_errors.errors = []
+    _thread_resilient_errors.errors.append(exc)
+
+
+def _pop_thread_resilient_errors() -> list[Exception]:
+    errors = getattr(_thread_resilient_errors, "errors", [])
+    _thread_resilient_errors.errors = []
+    return errors
+
+
 def _json_safe(value: Any) -> Any:
     """Convert JSON-like values into a shape safe for logs and requests."""
     if isinstance(value, Mapping):
@@ -167,6 +182,7 @@ class ComponentClient(BaseClient):
         dry_run: bool = False,
         pool_json_log: Path | None = None,
         timeout_commands: str = "10 s",
+        error_resilient: bool = False,
     ) -> None:
         super().__init__(url, dry_run=dry_run)
         feedback_timeout = parse_timeout_commands(timeout_commands)
@@ -175,6 +191,7 @@ class ComponentClient(BaseClient):
         self.pool_json_log = pool_json_log
         self.timeout_commands = timeout_commands.strip()
         self._feedback_timeout = feedback_timeout
+        self._error_resilient = error_resilient
 
     def _write_json_log(self, data: dict[str, Any]) -> None:
         if self.pool_json_log is None:
@@ -182,6 +199,16 @@ class ComponentClient(BaseClient):
         self.pool_json_log.parent.mkdir(parents=True, exist_ok=True)
         with self.pool_json_log.open("a", encoding="utf-8") as fh:
             fh.write(json.dumps(_json_safe(data)) + "\n")
+
+    def _raise_for_status(self, response: requests.Response, *args, **kwargs) -> None:
+        if not self._error_resilient:
+            super()._raise_for_status(response, *args, **kwargs)
+            return
+        try:
+            response.raise_for_status()
+        except requests.HTTPError as exc:
+            logger.error("Client HTTP error (error_resilient=True): {}", exc)
+            _push_thread_resilient_error(exc)
 
     def _request(self, method: str, path: str, **kwargs) -> requests.Response:
         if not self._access_lock.acquire(blocking=False):
@@ -311,6 +338,11 @@ class ComponentClient(BaseClient):
             if resp.text.strip() == expected:
                 return
             time.sleep(interval)
-        raise TimeoutError(
+        exc = TimeoutError(
             f"Feedback '{status_command}' did not return '{expected}' within {timeout}s"
         )
+        if self._error_resilient:
+            logger.error("Client timeout (error_resilient=True): {}", exc)
+            _push_thread_resilient_error(exc)
+        else:
+            raise exc

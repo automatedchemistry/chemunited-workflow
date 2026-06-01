@@ -38,6 +38,7 @@ async def start_run(
         body.snapshot,
         dry_run=body.dry_run,
         timeout_commands=body.timeout_commands,
+        error_resilient=body.error_resilient,
     )
     return {"run_id": run_id}
 

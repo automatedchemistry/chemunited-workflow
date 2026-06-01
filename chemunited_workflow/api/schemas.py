@@ -51,6 +51,18 @@ class RunRequest(BaseModel):
         ),
     )
 
+    error_resilient: bool = Field(
+        default=False,
+        title="Error-resilient execution",
+        description=(
+            "If true, client-side errors (HTTP failures, timeouts) are logged "
+            "but do not interrupt node execution — all commands in a node method "
+            "run to completion. The node is still marked FAILED; its successors "
+            "become INACTIVE. Other independent branches continue normally.\n"
+            "If false (default), any error stops the entire run immediately."
+        ),
+    )
+
     @field_validator("timeout_commands")
     @classmethod
     def validate_timeout_commands(cls, value: str) -> str:

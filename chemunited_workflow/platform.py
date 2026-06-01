@@ -41,6 +41,7 @@ class Platform(Mapping[str, ComponentClient]):
         dry_run: bool = False,
         log_dir: Path | None = None,
         timeout_commands: str = "10 s",
+        error_resilient: bool = False,
     ) -> "Platform":
         """Build a Platform from a connectivity/associations.json file.
 
@@ -77,6 +78,7 @@ class Platform(Mapping[str, ComponentClient]):
                 dry_run=dry_run,
                 pool_json_log=pool_json_log,
                 timeout_commands=timeout_commands,
+                error_resilient=error_resilient,
             )
         return cls(components)
 
@@ -88,6 +90,7 @@ class Platform(Mapping[str, ComponentClient]):
         dry_run: bool = False,
         log_dir: Path | None = None,
         timeout_commands: str = "10 s",
+        error_resilient: bool = False,
     ) -> "Platform":
         """Shorthand: load from ``{project_dir}/connectivity/associations.json``."""
         return cls.from_connectivity(
@@ -95,4 +98,5 @@ class Platform(Mapping[str, ComponentClient]):
             dry_run=dry_run,
             log_dir=log_dir,
             timeout_commands=timeout_commands,
+            error_resilient=error_resilient,
         )

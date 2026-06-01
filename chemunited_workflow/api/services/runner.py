@@ -37,6 +37,7 @@ class RunnerService:
         *,
         dry_run: bool = False,
         timeout_commands: str = "10 s",
+        error_resilient: bool = False,
     ) -> str:
         """Launch execution in a background thread. Returns run_id immediately.
 
@@ -63,6 +64,7 @@ class RunnerService:
                 data,
                 dry_run,
                 timeout_commands,
+                error_resilient,
             ),
             daemon=True,
         )
@@ -77,6 +79,7 @@ class RunnerService:
         data: dict,
         dry_run: bool,
         timeout_commands: str,
+        error_resilient: bool,
     ) -> None:
         log_path = create_run_log_path(self._project_dir, snapshot_filename)
         log_path.parent.mkdir(parents=True, exist_ok=True)
@@ -97,6 +100,7 @@ class RunnerService:
                 dry_run=dry_run,
                 log_dir=self._project_dir / "log",
                 timeout_commands=timeout_commands,
+                error_resilient=error_resilient,
             )
             for process_name, process_index in sequence:
                 record = self._run_store.get(run_id)
@@ -119,6 +123,7 @@ class RunnerService:
                         lambda e: self._run_store.append_event(run_id, e),
                         wf_logger.handle_event,
                     ],
+                    error_resilient=error_resilient,
                 )
                 result = executor.execute(process, start_node="start")
                 self._run_store.append_result(run_id, result)

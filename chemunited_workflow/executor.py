@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, Any, Callable, Sequence
 import networkx as nx
 from loguru import logger
 
+from .clients import _pop_thread_resilient_errors
 from .enums import NodeState, WorkflowEventType
 from .models import (
     CompiledWorkflow,
@@ -46,12 +47,14 @@ class WorkflowExecutor:
         compiled_workflow: CompiledWorkflow,
         max_workers: int | None = None,
         event_listeners: Sequence[EventListener] | None = None,
+        error_resilient: bool = False,
     ) -> None:
         self._compiled = compiled_workflow
         self._max_workers = max_workers
         self._lock = RLock()
         self._logger = logger.bind(component="workflow.executor")
         self._event_listeners = tuple(event_listeners or ())
+        self._error_resilient = error_resilient
 
         self._state = WorkflowExecutorState()
         self._loopbacks_by_trigger: dict[tuple[str, bool], LoopBackSpec] = {}
@@ -304,6 +307,7 @@ class WorkflowExecutor:
             runtime=runtime,
         )
 
+        _pop_thread_resilient_errors()  # clear stale errors from thread pool reuse
         try:
             result = method(ctx)
             if not isinstance(result, bool):
@@ -311,6 +315,9 @@ class WorkflowExecutor:
                     f"Workflow method {method_name!r} for node {node_id!r} returned {result!r}. "
                     "Workflow methods must return bool."
                 )
+            resilient_errors = _pop_thread_resilient_errors()
+            if resilient_errors:
+                raise resilient_errors[0]
             with self._lock:
                 runtime.result = result
                 runtime.error = None
@@ -335,13 +342,27 @@ class WorkflowExecutor:
         except Exception as exc:
             self._state.errors[node_key] = exc
             self._state.node_result[node_key] = None
-            self._stop_scheduling = True
             self._update_node_status(
                 node_key,
                 state=NodeState.FAILED,
                 message=f"Node execution failed: {exc}",
                 event_type=WorkflowEventType.NODE_FAILED,
             )
+            if self._error_resilient:
+                self._logger.warning(
+                    "Node {!r} failed: {}. Continuing because error_resilient=True.",
+                    node_key[0],
+                    exc,
+                )
+                node_id, iteration = node_key
+                for successor in self._compiled.exec_graph.successors(node_id):
+                    self._resolve_predecessor(
+                        node_key=(successor, iteration),
+                        predecessor_key=node_key,
+                        is_active=False,
+                    )
+            else:
+                self._stop_scheduling = True
             return
 
         self._state.node_result[node_key] = outcome.result
