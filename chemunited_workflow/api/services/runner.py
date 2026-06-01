@@ -127,6 +127,11 @@ class RunnerService:
                 )
                 result = executor.execute(process, start_node="start")
                 self._run_store.append_result(run_id, result)
+                if not error_resilient and result.errors:
+                    raise RuntimeError(
+                        f"Process '{process_name}' step {process_index} failed with "
+                        f"{len(result.errors)} node error(s)."
+                    )
             self._run_store.set_state(run_id, success=True)
         except Exception:
             self._run_store.set_state(run_id, success=False)

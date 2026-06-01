@@ -359,7 +359,7 @@ class WorkflowExecutor:
                     self._resolve_predecessor(
                         node_key=(successor, iteration),
                         predecessor_key=node_key,
-                        is_active=False,
+                        is_active=True,
                     )
             else:
                 self._stop_scheduling = True
