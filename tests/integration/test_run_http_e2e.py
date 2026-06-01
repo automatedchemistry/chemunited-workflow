@@ -220,9 +220,7 @@ def app_e2e(project):
     branch_mod = _load_module(
         dirs["process_dir"] / "branching_process.py", "branching_process"
     )
-    loop_mod = _load_module(
-        dirs["process_dir"] / "loop_process.py", "loop_process"
-    )
+    loop_mod = _load_module(dirs["process_dir"] / "loop_process.py", "loop_process")
     main_mod = _load_module(
         dirs["process_dir"] / "main_parameters.py", "main_parameters"
     )
@@ -311,19 +309,19 @@ def test_run_a_status_poll_and_report(live_server):
     assert report_r.status_code == 200
     report = report_r.json()
     assert report["state"] == "finished"
-    assert len(report["results"]) == 2, (
-        f"Expected 2 process results, got {len(report['results'])}"
-    )
+    assert (
+        len(report["results"]) == 2
+    ), f"Expected 2 process results, got {len(report['results'])}"
 
     # --- Process 0: branching workflow ---
     branch_ns = report["results"][0]["node_state"]
     for key in ("start:0", "condition:0", "parallel_a:0", "parallel_b:0", "join:0"):
-        assert _node_state_completed(branch_ns, key), (
-            f"{key!r} should be COMPLETED; got {branch_ns.get(key)!r}"
-        )
-    assert _node_state_inactive(branch_ns, "false_branch:0"), (
-        f"false_branch:0 should be INACTIVE; got {branch_ns.get('false_branch:0')!r}"
-    )
+        assert _node_state_completed(
+            branch_ns, key
+        ), f"{key!r} should be COMPLETED; got {branch_ns.get(key)!r}"
+    assert _node_state_inactive(
+        branch_ns, "false_branch:0"
+    ), f"false_branch:0 should be INACTIVE; got {branch_ns.get('false_branch:0')!r}"
 
     # --- Process 1: loop workflow ---
     loop_result = report["results"][1]
@@ -332,29 +330,29 @@ def test_run_a_status_poll_and_report(live_server):
 
     for i in range(4):
         key = f"loop_script:{i}"
-        assert _node_state_completed(loop_ns, key), (
-            f"{key!r} should be COMPLETED; got {loop_ns.get(key)!r}"
-        )
+        assert _node_state_completed(
+            loop_ns, key
+        ), f"{key!r} should be COMPLETED; got {loop_ns.get(key)!r}"
 
     for i in range(3):
         key = f"loop_decision:{i}"
-        assert _node_state_completed(loop_ns, key), (
-            f"{key!r} should be COMPLETED; got {loop_ns.get(key)!r}"
-        )
-        assert loop_nr.get(key) is True, (
-            f"{key!r} should have result=True; got {loop_nr.get(key)!r}"
-        )
+        assert _node_state_completed(
+            loop_ns, key
+        ), f"{key!r} should be COMPLETED; got {loop_ns.get(key)!r}"
+        assert (
+            loop_nr.get(key) is True
+        ), f"{key!r} should have result=True; got {loop_nr.get(key)!r}"
 
-    assert _node_state_completed(loop_ns, "loop_decision:3"), (
-        f"loop_decision:3 should be COMPLETED; got {loop_ns.get('loop_decision:3')!r}"
-    )
-    assert loop_nr.get("loop_decision:3") is False, (
-        f"loop_decision:3 should have result=False; got {loop_nr.get('loop_decision:3')!r}"
-    )
+    assert _node_state_completed(
+        loop_ns, "loop_decision:3"
+    ), f"loop_decision:3 should be COMPLETED; got {loop_ns.get('loop_decision:3')!r}"
+    assert (
+        loop_nr.get("loop_decision:3") is False
+    ), f"loop_decision:3 should have result=False; got {loop_nr.get('loop_decision:3')!r}"
 
-    assert _node_state_completed(loop_ns, "finish:3"), (
-        f"finish:3 should be COMPLETED; got {loop_ns.get('finish:3')!r}"
-    )
+    assert _node_state_completed(
+        loop_ns, "finish:3"
+    ), f"finish:3 should be COMPLETED; got {loop_ns.get('finish:3')!r}"
 
 
 # ── Run B: /stream + /report ──────────────────────────────────────────────────
@@ -387,25 +385,25 @@ def test_run_b_stream_and_report(live_server):
                 break
             node_events.append(payload)
 
-    assert final_state == "finished", (
-        f"Stream final frame should carry state=finished; got {final_state!r}"
-    )
+    assert (
+        final_state == "finished"
+    ), f"Stream final frame should carry state=finished; got {final_state!r}"
     assert len(node_events) > 0, "Expected workflow events in the SSE stream"
 
     event_types = {e.get("event_type") for e in node_events}
-    assert "EXECUTION_STARTED" in event_types, (
-        f"EXECUTION_STARTED missing from stream events: {event_types}"
-    )
-    assert "NODE_COMPLETED" in event_types, (
-        f"NODE_COMPLETED missing from stream events: {event_types}"
-    )
+    assert (
+        "EXECUTION_STARTED" in event_types
+    ), f"EXECUTION_STARTED missing from stream events: {event_types}"
+    assert (
+        "NODE_COMPLETED" in event_types
+    ), f"NODE_COMPLETED missing from stream events: {event_types}"
 
     loopback_events = [
         e for e in node_events if e.get("event_type") == "LOOPBACK_TRIGGERED"
     ]
-    assert len(loopback_events) == 3, (
-        f"Expected 3 LOOPBACK_TRIGGERED events (iterations 0-2); got {len(loopback_events)}"
-    )
+    assert (
+        len(loopback_events) == 3
+    ), f"Expected 3 LOOPBACK_TRIGGERED events (iterations 0-2); got {len(loopback_events)}"
 
     report_r = _requests.get(f"{base_url}/run/{run_id}/report", timeout=5.0)
     assert report_r.status_code == 200

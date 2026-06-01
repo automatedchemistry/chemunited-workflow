@@ -140,10 +140,7 @@ async def _generate_run_stream(
         now = time.monotonic()
         if sent_event:
             last_sent = now
-        elif (
-            rec.state == RunState.RUNNING
-            and now - last_sent >= heartbeat_interval
-        ):
+        elif rec.state == RunState.RUNNING and now - last_sent >= heartbeat_interval:
             yield ": heartbeat\n\n"
             last_sent = now
 

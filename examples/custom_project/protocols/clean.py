@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import networkx as nx
 from pydantic import BaseModel, ConfigDict
-from time import sleep
 
 from chemunited_workflow import (
     NodeExecutionContext,
@@ -178,9 +177,9 @@ class CustomProcess(Process[ProcessConfig]):
 
     def command_1(self, ctx: NodeExecutionContext) -> bool:
         from loguru import logger
-        
+
         ctx.runtime.status_message = "Command 1 ran."
-        
+
         logger.info("Process clean: Command 1 started.")
         self.platform["AS injection"].put(
             "position",
