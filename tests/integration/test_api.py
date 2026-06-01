@@ -56,44 +56,35 @@ def project(tmp_path):
     return {"dirs": dirs, "tmp_path": tmp_path}
 
 
-@pytest.fixture
-def processes_and_configs(project):
+def _make_app(project):
+    from chemunited_workflow.api.dependencies import get_project_holder
+    from chemunited_workflow.project_loader import ProjectModules
+
     proc_dir = project["dirs"]["process_dir"]
     mod = _load_module(proc_dir / "my_process.py", "my_process")
     main_mod = _load_module(proc_dir / "main_parameters.py", "main_parameters")
-    return {
-        "processes": {"my_process": mod.MyProcess},
-        "configs": {"my_process": mod.MyConfig},
-        "main_parameter_class": main_mod.MainParameter,
-    }
+
+    api = create_api()
+    holder = api.dependency_overrides[get_project_holder]()
+    holder.load(
+        ProjectModules(
+            project_dir=project["tmp_path"],
+            processes={"my_process": mod.MyProcess},
+            configs={"my_process": mod.MyConfig},
+            main_parameter_class=main_mod.MainParameter,
+        )
+    )
+    return api
 
 
 @pytest.fixture
-def app(project, processes_and_configs):
-    return create_api(
-        project_dir=project["tmp_path"],
-        enable_builder=True,
-        **processes_and_configs,
-    )
+def app(project):
+    return _make_app(project)
 
 
 @pytest.fixture
 def client(app):
     return TestClient(app)
-
-
-@pytest.fixture
-def app_readonly(project, processes_and_configs):
-    return create_api(
-        project_dir=project["tmp_path"],
-        enable_builder=False,
-        **processes_and_configs,
-    )
-
-
-@pytest.fixture
-def client_readonly(app_readonly):
-    return TestClient(app_readonly)
 
 
 # ── /processes ────────────────────────────────────────────────────────────────
@@ -157,18 +148,6 @@ def test_create_snapshot_bad_key(client):
     }
     r = client.post("/snapshots/", json=body)
     assert r.status_code == 422
-
-
-def test_write_disabled_when_builder_false(client_readonly):
-    body = {
-        "name": "test",
-        "data": {
-            "main_parameter": {"reagent_volume_ml": 5.0, "target_temperature_c": 25.0},
-            "my_process_0": {},
-        },
-    }
-    r = client_readonly.post("/snapshots/", json=body)
-    assert r.status_code in (404, 405)
 
 
 # ── /run ──────────────────────────────────────────────────────────────────────
@@ -357,11 +336,6 @@ def test_delete_existing_snapshot(client, project):
 def test_delete_missing_snapshot(client):
     r = client.delete("/snapshots/missing.json")
     assert r.status_code == 404
-
-
-def test_delete_snapshot_builder_false(client_readonly, project):
-    r = client_readonly.delete("/snapshots/run_001.json")
-    assert r.status_code in (404, 405)
 
 
 # ── /logs/search ──────────────────────────────────────────────────────────────

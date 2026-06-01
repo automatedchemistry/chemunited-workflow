@@ -100,3 +100,11 @@ class ComponentStatus(BaseModel):
     status_code: int | None = None
     latency_ms: int | None = None
     error: str | None = None
+
+
+class ProjectIn(BaseModel):
+    project_dir: str
+
+
+class ProjectOut(BaseModel):
+    project_dir: str | None = None
