@@ -48,6 +48,7 @@ class WorkflowExecutor:
         max_workers: int | None = None,
         event_listeners: Sequence[EventListener] | None = None,
         error_resilient: bool = False,
+        process_key: str | None = None,
     ) -> None:
         self._compiled = compiled_workflow
         self._max_workers = max_workers
@@ -55,6 +56,7 @@ class WorkflowExecutor:
         self._logger = logger.bind(component="workflow.executor")
         self._event_listeners = tuple(event_listeners or ())
         self._error_resilient = error_resilient
+        self._process_key = process_key
 
         self._state = WorkflowExecutorState()
         self._loopbacks_by_trigger: dict[tuple[str, bool], LoopBackSpec] = {}
@@ -120,6 +122,7 @@ class WorkflowExecutor:
                 node_result=dict(self._state.node_result),
                 node_runtime=dict(self._state.node_runtime),
                 errors=dict(self._state.errors),
+                process=self._process_key,
             )
             if execution_error is None:
                 final_message = (
@@ -141,6 +144,7 @@ class WorkflowExecutor:
             node_result=dict(self._state.node_result),
             node_runtime=dict(self._state.node_runtime),
             errors=dict(self._state.errors),
+            process=self._process_key,
         )
 
     def _initialize_iteration(self, start_node: str, iteration: int) -> None:
@@ -519,6 +523,7 @@ class WorkflowExecutor:
             event_type=event_type,
             message=message,
             node_key=node_key,
+            process=self._process_key,
             state=state,
             result=result,
             method=method,

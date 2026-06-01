@@ -124,6 +124,7 @@ class RunnerService:
                         wf_logger.handle_event,
                     ],
                     error_resilient=error_resilient,
+                    process_key=f"{process_name}_{process_index}",
                 )
                 result = executor.execute(process, start_node="start")
                 self._run_store.append_result(run_id, result)

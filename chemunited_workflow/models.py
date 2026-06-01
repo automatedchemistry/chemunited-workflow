@@ -98,9 +98,11 @@ class WorkflowResult:
     node_result: dict[tuple[str, int], bool | None]
     node_runtime: dict[tuple[str, int], NodeRuntime]
     errors: dict[tuple[str, int], Exception]
+    process: str | None = None
 
     def model_dump(self) -> dict:
         return {
+            "process": self.process,
             "node_state": {
                 f"{k[0]}:{k[1]}": str(v) for k, v in self.node_state.items()
             },
@@ -127,6 +129,7 @@ class WorkflowExecutionEvent:
     event_type: WorkflowEventType
     message: str
     node_key: tuple[str, int] | None = None
+    process: str | None = None
     state: NodeState | None = None
     result: bool | None = None
     method: str | None = None
@@ -140,6 +143,7 @@ class WorkflowExecutionEvent:
         return {
             "event_type": str(self.event_type),
             "message": self.message,
+            "process": self.process,
             "node_key": list(self.node_key) if self.node_key else None,
             "state": str(self.state) if self.state else None,
             "result": self.result,
