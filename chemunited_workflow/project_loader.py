@@ -64,9 +64,7 @@ def load_project(project_dir: Path) -> ProjectModules:
 
     for attr in ("PROCESSES", "CONFIGS"):
         if not hasattr(protocols, attr):
-            raise ProjectLoadError(
-                f"'protocols/__init__.py' does not export '{attr}'."
-            )
+            raise ProjectLoadError(f"'protocols/__init__.py' does not export '{attr}'.")
     if not hasattr(protocols_mp, "MainParameter"):
         raise ProjectLoadError(
             "'protocols/main_parameters.py' does not export 'MainParameter'."
