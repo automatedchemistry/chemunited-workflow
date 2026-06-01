@@ -19,13 +19,17 @@ _NO_PROJECT = "No project loaded. Use the load_project tool first."
 
 def _protocol(holder: ProjectHolder) -> ProtocolService:
     svc = holder.protocol_service
-    assert svc is not None
+    if svc is None:
+        raise RuntimeError(
+            "protocol_service is None — call is_loaded() before _protocol()"
+        )
     return svc
 
 
 def _runner(holder: ProjectHolder) -> RunnerService:
     svc = holder.runner_service
-    assert svc is not None
+    if svc is None:
+        raise RuntimeError("runner_service is None — call is_loaded() before _runner()")
     return svc
 
 
