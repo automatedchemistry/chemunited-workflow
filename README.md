@@ -127,23 +127,43 @@ CONFIGS   = {"my_workflow": MyConfig}
 
 ## Deployment Modes
 
-Use the `chemunited-workflow` CLI, passing your project directory as the first argument:
+### FastAPI server
+
+The FastAPI server is project-agnostic. You can start it without a project and load one at runtime, or pass a project directory as a shortcut to pre-load it at startup.
 
 ```bash
-# FastAPI server — interactive API at http://127.0.0.1:3116/docs
+# Start without a project — load one via PUT /project after startup
+chemunited-workflow --fastapi --port 3116
+
+# Start with a project pre-loaded (shortcut)
 chemunited-workflow my_project --fastapi --port 3116
 
-# Execute a specific saved snapshot directly
-chemunited-workflow my_project my_project/protocols_hystoric/snapshot_20250101T120000.json
+# Development with auto-reload
+chemunited-workflow --fastapi --reload
+```
 
-# MCP server — expose workflows as tools to Claude or other agents
-chemunited-workflow my_project --mcp
+To load or switch projects at runtime:
+
+```bash
+curl -X PUT http://127.0.0.1:3116/project/ \
+  -H "Content-Type: application/json" \
+  -d '{"project_dir": "/absolute/path/to/my_project"}'
+```
+
+> **Windows paths:** Use forward slashes (`C:/Users/...`) or escaped backslashes (`C:\\Users\\...`) in JSON — bare backslashes are not valid JSON.
+
+You can switch to a different project at any time, as long as no run is currently active.
+
+### MCP server
+
+The MCP server is project-agnostic. It starts without a project and the LLM loads one at runtime by calling the `load_project` tool.
+
+```bash
+# MCP server over stdio — expose workflows as tools to Claude or other agents
+chemunited-workflow --mcp
 
 # MCP server over streamable HTTP, exposed at http://127.0.0.1:3117/mcp
-chemunited-workflow my_project --mcp-http --port 3117
-
-# Development with auto-reload
-chemunited-workflow my_project --fastapi --reload
+chemunited-workflow --mcp-http --port 3117
 ```
 
 ### MCP stdio
@@ -157,7 +177,7 @@ communicates through the process stdin/stdout streams:
   "mcpServers": {
     "chemunited-workflow": {
       "command": "chemunited-workflow",
-      "args": ["/absolute/path/to/my_project", "--mcp"]
+      "args": ["--mcp"]
     }
   }
 }
@@ -171,21 +191,20 @@ environment's script:
   "mcpServers": {
     "chemunited-workflow": {
       "command": "/absolute/path/to/.venv/bin/chemunited-workflow",
-      "args": ["/absolute/path/to/my_project", "--mcp"]
+      "args": ["--mcp"]
     }
   }
 }
 ```
 
-On Windows, for the included example project, assuming this repository is
-checked out at `D:\Projects\chemunited-workflow`:
+On Windows, assuming this repository is checked out at `D:\Projects\chemunited-workflow`:
 
 ```json
 {
   "mcpServers": {
     "chemunited-workflow": {
       "command": "D:\\Projects\\chemunited-workflow\\.venv\\Scripts\\chemunited-workflow.exe",
-      "args": ["D:\\Projects\\chemunited-workflow\\examples\\custom_project", "--mcp"]
+      "args": ["--mcp"]
     }
   }
 }
@@ -197,7 +216,7 @@ Use streamable HTTP when your MCP client asks for a URL or when you want the
 server to run independently of the LLM client process:
 
 ```bash
-chemunited-workflow my_project --mcp-http --host 127.0.0.1 --port 3117
+chemunited-workflow --mcp-http --host 127.0.0.1 --port 3117
 ```
 
 The MCP HTTP address is:
@@ -206,16 +225,16 @@ The MCP HTTP address is:
 http://127.0.0.1:3117/mcp
 ```
 
-For the included example project on Windows:
+On Windows:
 
 ```bash
-.venv\Scripts\chemunited-workflow.exe examples\custom_project --mcp-http --port 3117
+.venv\Scripts\chemunited-workflow.exe --mcp-http --port 3117
 ```
 
 Use `--mcp-path` to change the endpoint path:
 
 ```bash
-chemunited-workflow my_project --mcp-http --port 3117 --mcp-path /chemunited-mcp
+chemunited-workflow --mcp-http --port 3117 --mcp-path /chemunited-mcp
 ```
 
 Then the address becomes `http://127.0.0.1:3117/chemunited-mcp`.
@@ -224,9 +243,21 @@ MCP HTTP is separate from the FastAPI REST API. FastAPI uses
 `http://127.0.0.1:3116/docs`; MCP HTTP uses the MCP endpoint path, such as
 `http://127.0.0.1:3117/mcp`.
 
+> **Note:** Once connected, ask the LLM to call `load_project` with the path to
+> your project directory. All other tools return an error until a project is loaded.
+
 ## API Overview
 
 When running in `--fastapi` mode the following endpoints are available.
+
+All endpoints except `GET /project/` return HTTP `503` if no project has been loaded yet.
+
+### Project management
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/project/` | Return the currently loaded project directory, or `null` if none is loaded. Always returns `200` — use this as a readiness probe. |
+| `PUT` | `/project/` | Load or switch the active project. Body: `{"project_dir": "/path/to/project"}`. Returns `409` if a run is currently active. |
 
 ### Processes
 
@@ -236,7 +267,7 @@ When running in `--fastapi` mode the following endpoints are available.
 | `GET` | `/processes/{name}/schema` | JSON schema for a process config |
 | `GET` | `/processes/{name}/source` | Full source code of a process file |
 
-### Snapshots *(builder mode only)*
+### Snapshots
 
 | Method | Path | Description |
 |--------|------|-------------|
@@ -296,6 +327,8 @@ When running in `--mcp` or `--mcp-http` mode, the following tools are exposed to
 
 | Tool | Description |
 |------|-------------|
+| `load_project` | Load or switch the active project by directory path. Rejected if a run is active. |
+| `get_project` | Return the currently loaded project path, or null if none is loaded. |
 | `list_processes` | Discover available process names and schemas |
 | `get_process_schema` | Full parameter schema for a named process |
 | `read_process` | Source code of a process definition file |

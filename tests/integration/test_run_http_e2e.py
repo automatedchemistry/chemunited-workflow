@@ -225,19 +225,26 @@ def app_e2e(project):
         dirs["process_dir"] / "main_parameters.py", "main_parameters"
     )
 
-    return create_api(
-        project_dir=project["tmp_path"],
-        processes={
-            "branching_process": branch_mod.BranchingProcess,
-            "loop_process": loop_mod.LoopProcess,
-        },
-        configs={
-            "branching_process": branch_mod.BranchingConfig,
-            "loop_process": loop_mod.LoopConfig,
-        },
-        main_parameter_class=main_mod.MainParameter,
-        enable_builder=False,
+    from chemunited_workflow.api.dependencies import get_project_holder
+    from chemunited_workflow.project_loader import ProjectModules
+
+    api = create_api()
+    holder = api.dependency_overrides[get_project_holder]()
+    holder.load(
+        ProjectModules(
+            project_dir=project["tmp_path"],
+            processes={
+                "branching_process": branch_mod.BranchingProcess,
+                "loop_process": loop_mod.LoopProcess,
+            },
+            configs={
+                "branching_process": branch_mod.BranchingConfig,
+                "loop_process": loop_mod.LoopConfig,
+            },
+            main_parameter_class=main_mod.MainParameter,
+        )
     )
+    return api
 
 
 @pytest.fixture(scope="module")

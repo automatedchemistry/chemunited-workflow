@@ -117,12 +117,18 @@ def test_api_dry_run_run_completes(tmp_path):
         dirs["process_dir"] / "main_parameters.py", "main_parameters"
     )
 
-    app = create_api(
-        project_dir=tmp_path,
-        processes={"my_process": mod.MyProcess},
-        configs={"my_process": mod.MyConfig},
-        main_parameter_class=main_mod.MainParameter,
-        enable_builder=True,
+    from chemunited_workflow.api.dependencies import get_project_holder
+    from chemunited_workflow.project_loader import ProjectModules
+
+    app = create_api()
+    holder = app.dependency_overrides[get_project_holder]()
+    holder.load(
+        ProjectModules(
+            project_dir=tmp_path,
+            processes={"my_process": mod.MyProcess},
+            configs={"my_process": mod.MyConfig},
+            main_parameter_class=main_mod.MainParameter,
+        )
     )
     client = TestClient(app)
     r = client.post("/run/", json={"snapshot": "run_001.json", "dry_run": True})

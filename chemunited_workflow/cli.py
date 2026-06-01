@@ -1,80 +1,18 @@
 from __future__ import annotations
 
-import importlib
-import sys
 from pathlib import Path
-from typing import NamedTuple
 
 import click
 
-
-class _ProjectModules(NamedTuple):
-    processes: dict
-    configs: dict
-    main_parameter_class: type
-
-
-def _load_project(project_dir: Path) -> _ProjectModules:
-    if not (project_dir / "protocols" / "__init__.py").exists():
-        raise click.BadParameter(
-            f"No 'protocols/__init__.py' found in '{project_dir}'.\n"
-            "Expected layout:\n"
-            "  <project_dir>/\n"
-            "    protocols/__init__.py         # must export CONFIGS and PROCESSES\n"
-            "    protocols/main_parameters.py  # must export MainParameter",
-            param_hint="project_dir",
-        )
-    if not (project_dir / "protocols" / "main_parameters.py").exists():
-        raise click.BadParameter(
-            f"No 'protocols/main_parameters.py' found in '{project_dir}'.",
-            param_hint="project_dir",
-        )
-
-    str_dir = str(project_dir)
-    sys.path.insert(0, str_dir)
-    importlib.invalidate_caches()
-    try:
-        for key in list(sys.modules):
-            if key == "protocols" or key.startswith("protocols."):
-                del sys.modules[key]
-        protocols = importlib.import_module("protocols")
-        protocols_mp = importlib.import_module("protocols.main_parameters")
-    except ImportError as exc:
-        raise click.BadParameter(
-            f"Failed to import 'protocols' from '{project_dir}': {exc}",
-            param_hint="project_dir",
-        ) from exc
-    finally:
-        sys.path.remove(str_dir)
-
-    for attr in ("PROCESSES", "CONFIGS"):
-        if not hasattr(protocols, attr):
-            raise click.BadParameter(
-                f"'protocols/__init__.py' does not export '{attr}'.",
-                param_hint="project_dir",
-            )
-    if not hasattr(protocols_mp, "MainParameter"):
-        raise click.BadParameter(
-            "'protocols/main_parameters.py' does not export 'MainParameter'.",
-            param_hint="project_dir",
-        )
-
-    return _ProjectModules(
-        processes=protocols.PROCESSES,
-        configs=protocols.CONFIGS,
-        main_parameter_class=protocols_mp.MainParameter,
-    )
+from chemunited_workflow.project_loader import ProjectLoadError, load_project
 
 
 @click.command()
 @click.argument(
     "project_dir",
-    type=click.Path(exists=True, file_okay=False, resolve_path=True, path_type=Path),
-)
-@click.argument(
-    "snapshot",
     required=False,
-    type=click.Path(exists=True, path_type=Path),
+    default=None,
+    type=click.Path(exists=True, file_okay=False, resolve_path=True, path_type=Path),
 )
 @click.option(
     "--fastapi",
@@ -117,30 +55,24 @@ def _load_project(project_dir: Path) -> _ProjectModules:
     help="Enable auto-reload (development only, FastAPI only).",
 )
 def main(
-    project_dir: Path,
-    snapshot: Path | None,
+    project_dir: Path | None,
     mode: str,
     host: str,
     port: int | None,
     mcp_path: str,
     reload: bool,
 ) -> None:
-    """Start chemunited-workflow server for PROJECT_DIR.
+    """Start the chemunited-workflow server.
 
-    PROJECT_DIR must contain a protocols/ package that exports CONFIGS,
-    PROCESSES, and protocols/main_parameters.py that exports MainParameter.
+    PROJECT_DIR is optional in all modes. For FastAPI, it pre-loads a project at
+    startup; without it the server starts empty and accepts ``PUT /project`` at
+    runtime. For MCP, use the ``load_project`` tool to load a project via the LLM.
     """
-    modules = _load_project(project_dir)
-
     if mode in {"mcp", "mcp_http"}:
         from chemunited_workflow.mcp import create_mcp_server
 
         resolved_port = port if port is not None else 3117
         server = create_mcp_server(
-            project_dir=project_dir,
-            processes=modules.processes,
-            configs=modules.configs,
-            main_parameter_class=modules.main_parameter_class,
             host=host,
             port=resolved_port,
             streamable_http_path=mcp_path,
@@ -163,15 +95,18 @@ def main(
             )
 
         from chemunited_workflow.api import create_api
+        from chemunited_workflow.api.dependencies import get_project_holder
 
         resolved_port = port if port is not None else 3116
-        app = create_api(
-            project_dir=project_dir,
-            processes=modules.processes,
-            configs=modules.configs,
-            main_parameter_class=modules.main_parameter_class,
-            enable_builder=(snapshot is None),
-        )
+        app = create_api()
+
+        if project_dir is not None:
+            try:
+                modules = load_project(project_dir)
+            except ProjectLoadError as exc:
+                raise click.BadParameter(str(exc), param_hint="project_dir") from exc
+            app.dependency_overrides[get_project_holder]().load(modules)
+
         uvicorn.run(app, host=host, port=resolved_port, reload=reload)
 
 
