@@ -1,0 +1,247 @@
+from __future__ import annotations
+
+import argparse
+import base64
+from io import BytesIO
+from pathlib import Path
+import re
+import sys
+import threading
+import traceback
+import webbrowser
+
+from chemunited_workflow.api import create_api
+from chemunited_workflow.api.dependencies import get_project_holder
+from chemunited_workflow.project_loader import load_project
+
+
+REPO_ROOT = Path(__file__).resolve().parent
+DEFAULT_PROJECT_DIR = REPO_ROOT / "examples" / "custom_project"
+DEFAULT_ICON_PATH = REPO_ROOT / "chemunited_workflow" / "chemunited.svg"
+ERROR_LOG_PATH = REPO_ROOT / "tray_launcher.log"
+
+
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="Run chemunited-workflow FastAPI in the Windows system tray."
+    )
+    parser.add_argument(
+        "--project-dir",
+        type=Path,
+        default=DEFAULT_PROJECT_DIR,
+        help="Project directory containing protocols/ and connectivity/.",
+    )
+    parser.add_argument(
+        "--host",
+        default="127.0.0.1",
+        help="FastAPI bind host.",
+    )
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=3116,
+        help="FastAPI bind port.",
+    )
+    parser.add_argument(
+        "--url",
+        default=None,
+        help="URL opened by the tray menu. Defaults to http://{host}:{port}/docs.",
+    )
+    return parser.parse_args(argv)
+
+
+def build_app_url(host: str, port: int, url: str | None = None) -> str:
+    return url or f"http://{host}:{port}/docs"
+
+
+def _square_icon(image, size: int = 64):
+    from PIL import Image, ImageOps
+
+    image = ImageOps.contain(image.convert("RGBA"), (size, size))
+    canvas = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+    offset = ((size - image.width) // 2, (size - image.height) // 2)
+    canvas.paste(image, offset, image)
+    return canvas
+
+
+def load_embedded_png_icon(svg_path: Path, size: int = 64):
+    from PIL import Image
+
+    text = svg_path.read_text(encoding="utf-8")
+    match = re.search(r"data:image/png;base64,([^\"']+)", text, re.DOTALL)
+    if not match:
+        raise ValueError(f"No embedded PNG found in {svg_path}")
+
+    png_bytes = base64.b64decode("".join(match.group(1).split()))
+    with Image.open(BytesIO(png_bytes)) as image:
+        return _square_icon(image, size=size)
+
+
+def create_fallback_icon(size: int = 64):
+    return create_tray_badge_icon(size=size)
+
+
+def create_tray_badge_icon(size: int = 64):
+    from PIL import Image, ImageDraw
+
+    image = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(image)
+    center = size / 2
+    outer_margin = max(1, size * 0.04)
+    white_margin = size * 0.18
+    blue_margin = size * 0.24
+
+    draw.ellipse(
+        (
+            outer_margin,
+            outer_margin,
+            size - outer_margin - 1,
+            size - outer_margin - 1,
+        ),
+        fill=(40, 47, 56, 255),
+    )
+    draw.ellipse(
+        (
+            white_margin,
+            white_margin,
+            size - white_margin - 1,
+            size - white_margin - 1,
+        ),
+        fill=(255, 255, 255, 255),
+    )
+    draw.ellipse(
+        (
+            blue_margin,
+            blue_margin,
+            size - blue_margin - 1,
+            size - blue_margin - 1,
+        ),
+        fill=(30, 144, 255, 255),
+    )
+
+    point_radius = max(1.5, size * 0.075)
+    point_offset = size * 0.31
+    for x, y in (
+        (center, center - point_offset),
+        (center + point_offset, center),
+        (center, center + point_offset),
+        (center - point_offset, center),
+    ):
+        draw.ellipse(
+            (
+                x - point_radius,
+                y - point_radius,
+                x + point_radius,
+                y + point_radius,
+            ),
+            fill=(255, 255, 255, 255),
+        )
+    return image
+
+
+def load_tray_icon_image(svg_path: Path = DEFAULT_ICON_PATH, size: int = 64):
+    return create_tray_badge_icon(size=size)
+
+
+def create_fastapi_app(project_dir: Path):
+    app = create_api()
+    modules = load_project(project_dir.resolve())
+    app.dependency_overrides[get_project_holder]().load(modules)
+    return app
+
+
+def create_uvicorn_config(app, host: str, port: int):
+    import uvicorn
+
+    return uvicorn.Config(
+        app,
+        host=host,
+        port=port,
+        access_log=False,
+        log_config=None,
+        log_level="warning",
+    )
+
+
+def start_uvicorn_thread(app, host: str, port: int):
+    import uvicorn
+
+    config = create_uvicorn_config(app, host=host, port=port)
+    server = uvicorn.Server(config)
+    thread = threading.Thread(
+        target=server.run,
+        name="chemunited-fastapi",
+        daemon=True,
+    )
+    thread.start()
+    return server, thread
+
+
+def stop_server(server, thread: threading.Thread, timeout: float = 5.0) -> None:
+    server.should_exit = True
+    if thread.is_alive():
+        thread.join(timeout=timeout)
+
+
+def run_tray(server, server_thread: threading.Thread, app_url: str) -> None:
+    import pystray
+
+    def open_app(icon, item):
+        webbrowser.open(app_url)
+
+    def show_status(icon, item):
+        icon.notify("FastAPI app is running", "chemunited-workflow")
+
+    def quit_app(icon, item):
+        stop_server(server, server_thread)
+        icon.stop()
+
+    menu = pystray.Menu(
+        pystray.MenuItem("Open App", open_app),
+        pystray.MenuItem("Status", show_status),
+        pystray.MenuItem("Quit", quit_app),
+    )
+    icon = pystray.Icon(
+        "chemunited-workflow",
+        load_tray_icon_image(),
+        "chemunited-workflow",
+        menu,
+    )
+    icon.run()
+
+
+def main(argv: list[str] | None = None) -> None:
+    try:
+        ERROR_LOG_PATH.unlink(missing_ok=True)
+    except OSError:
+        pass
+    args = parse_args(argv)
+    project_dir = args.project_dir.resolve()
+    app_url = build_app_url(args.host, args.port, args.url)
+    app = create_fastapi_app(project_dir)
+    server, server_thread = start_uvicorn_thread(app, args.host, args.port)
+    run_tray(server, server_thread, app_url)
+
+
+def _report_startup_error(exc: BaseException) -> None:
+    ERROR_LOG_PATH.write_text(traceback.format_exc(), encoding="utf-8")
+    try:
+        import ctypes
+
+        ctypes.windll.user32.MessageBoxW(
+            None,
+            f"Tray launcher failed.\n\nDetails were written to:\n{ERROR_LOG_PATH}",
+            "chemunited-workflow",
+            0x10,
+        )
+    except Exception:
+        pass
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except Exception as exc:
+        _report_startup_error(exc)
+        if Path(sys.executable).stem.lower() != "pythonw":
+            raise

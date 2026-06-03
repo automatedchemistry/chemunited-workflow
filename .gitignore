@@ -220,3 +220,6 @@ instructions
 pytest-cache*
 .pre-commit-cache*
 
+# pycharm
+.idea
+

@@ -30,6 +30,9 @@ pip install -e .
 # With API and MCP server support
 pip install -e ".[server]"
 
+# With Windows tray launcher support
+pip install -e ".[tray]"
+
 # With test dependencies
 pip install -e ".[test]"
 ```
@@ -164,6 +167,46 @@ chemunited-workflow --mcp
 
 # MCP server over streamable HTTP, exposed at http://127.0.0.1:3117/mcp
 chemunited-workflow --mcp-http --port 3117
+```
+
+### Windows tray launcher
+
+Use the root `tray_launcher.py` script when you want the FastAPI app to run as a
+Windows background process with a system tray icon.
+
+```powershell
+# Install once
+pip install -e ".[tray]"
+
+# First launch with a terminal so any setup errors are visible
+.\.venv\Scripts\python.exe tray_launcher.py
+
+# Then launch silently with no terminal window
+.\.venv\Scripts\pythonw.exe tray_launcher.py
+```
+
+By default, the launcher loads `examples/custom_project` and opens
+`http://127.0.0.1:3116/docs`. To use a different project or port:
+
+```powershell
+.\.venv\Scripts\pythonw.exe tray_launcher.py --project-dir C:/path/to/my_project --port 3116
+```
+
+Use the venv executable explicitly. A plain `pythonw tray_launcher.py` may use a
+different global Python environment that does not have `pystray` installed.
+If the silent launcher fails during startup, it writes details to
+`tray_launcher.log`.
+
+The tray menu provides:
+
+- **Open App**: opens the FastAPI docs in the default browser.
+- **Status**: shows a notification that the server is running.
+- **Quit**: stops uvicorn and removes the tray icon.
+
+For development, the normal terminal CLI remains available:
+
+```powershell
+chemunited-workflow examples/custom_project --fastapi --port 3116
 ```
 
 ### MCP stdio
