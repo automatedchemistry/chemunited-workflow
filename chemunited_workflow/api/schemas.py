@@ -41,7 +41,7 @@ class RunRequest(BaseModel):
         ),
     )
     timeout_commands: str = Field(
-        default="10 s",
+        default="",
         title="Timeout duration to wait the command feedback",
         description=(
             "Timeout duration to wait the command feedback after wait_time finished.\n"
