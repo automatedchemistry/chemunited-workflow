@@ -95,7 +95,7 @@ def test_uvicorn_config_does_not_require_console_streams(monkeypatch):
 
 def test_existing_api_with_project_loads_project_and_exits(monkeypatch):
     calls = []
-    project_dir = Path("C:/path/to/project")
+    project_dir = Path("path/to/project")
 
     monkeypatch.setattr(tray_launcher, "is_api_reachable", lambda base_url: True)
     monkeypatch.setattr(
@@ -116,7 +116,7 @@ def test_existing_api_with_project_loads_project_and_exits(monkeypatch):
 
     tray_launcher.run(["--project-dir", str(project_dir), "--port", "3116"])
 
-    assert calls == [("http://127.0.0.1:3116", project_dir)]
+    assert calls == [("http://127.0.0.1:3116", project_dir.resolve())]
 
 
 def test_existing_api_without_project_exits(monkeypatch):
