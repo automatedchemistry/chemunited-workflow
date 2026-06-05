@@ -2,10 +2,11 @@ from __future__ import annotations
 
 import argparse
 import base64
+import ipaddress
 from io import BytesIO
 from pathlib import Path
 import re
-import subprocess
+import subprocess  # nosec B404 - used only to relaunch this module via pythonw.
 import sys
 import threading
 import traceback
@@ -60,7 +61,17 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 
 def build_base_url(host: str, port: int) -> str:
-    display_host = "127.0.0.1" if host in {"0.0.0.0", "::"} else host
+    display_host = host
+    try:
+        parsed_host = ipaddress.ip_address(host)
+    except ValueError:
+        parsed_host = None
+
+    if parsed_host is not None:
+        if parsed_host.is_unspecified:
+            display_host = "127.0.0.1"
+        elif parsed_host.version == 6:
+            display_host = f"[{host}]"
     return f"http://{display_host}:{port}"
 
 
@@ -276,7 +287,7 @@ def relaunch_silently(argv: list[str]) -> bool:
             subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP
         )
 
-    subprocess.Popen(
+    subprocess.Popen(  # nosec B603 - shell=False and argv relaunches this module.
         [str(pythonw), "-m", "chemunited_workflow.tray_launcher", *argv],
         close_fds=True,
         creationflags=creationflags,
@@ -287,8 +298,12 @@ def relaunch_silently(argv: list[str]) -> bool:
 def run(argv: list[str] | None = None) -> None:
     try:
         ERROR_LOG_PATH.unlink(missing_ok=True)
-    except OSError:
-        pass
+    except OSError as unlink_error:
+        if sys.stderr is not None:
+            print(
+                f"Failed to clear old tray launcher log: {unlink_error}",
+                file=sys.stderr,
+            )
 
     raw_argv = list(sys.argv[1:] if argv is None else argv)
     args = parse_args(raw_argv)
@@ -328,8 +343,11 @@ def _report_startup_error(exc: BaseException) -> None:
             "chemunited-workflow",
             0x10,
         )
-    except Exception:
-        pass
+    except Exception as dialog_error:
+        if sys.stderr is not None:
+            print(
+                f"Failed to show startup error dialog: {dialog_error}", file=sys.stderr
+            )
 
 
 if __name__ == "__main__":

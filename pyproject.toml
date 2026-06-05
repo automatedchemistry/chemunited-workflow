@@ -20,17 +20,12 @@ dependencies = [
     "click>=8.1",
     "pint>=0.23",
     "pydantic-pint>=0.2",
-]
-
-[project.optional-dependencies]
-server = [
-    "uvicorn>=0.29",
-]
-tray = [
     "uvicorn>=0.29",
     "pystray>=0.19",
     "pillow>=10",
 ]
+
+[project.optional-dependencies]
 test = [
     "pytest>=8.0",
     "pytest-mock>=3.12",

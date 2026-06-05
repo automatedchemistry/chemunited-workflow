@@ -34,6 +34,7 @@ def test_build_app_url_uses_explicit_url():
 
 def test_embedded_png_icon_can_be_loaded_from_svg(monkeypatch):
     pytest.importorskip("PIL")
+    from PIL import Image
 
     monkeypatch.setattr(
         Path,
@@ -44,6 +45,15 @@ def test_embedded_png_icon_can_be_loaded_from_svg(monkeypatch):
             'lU4NfwAAAABJRU5ErkJggg=="/></svg>'
         ),
     )
+
+    class OpenedImage:
+        def __enter__(self):
+            return Image.new("RGBA", (1, 1))
+
+        def __exit__(self, exc_type, exc_value, traceback):
+            return False
+
+    monkeypatch.setattr(Image, "open", lambda image_bytes: OpenedImage())
 
     image = tray_launcher.load_embedded_png_icon(Path("embedded_icon.svg"))
 

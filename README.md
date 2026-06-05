@@ -24,14 +24,8 @@ cd chemunited-workflow
 python -m venv .venv
 source .venv/bin/activate  # Windows: .venv\Scripts\activate
 
-# Core package
+# Package, including FastAPI, MCP, and tray launcher support
 pip install -e .
-
-# With API and MCP server support
-pip install -e ".[server]"
-
-# With Windows tray launcher support
-pip install -e ".[tray]"
 
 # With test dependencies
 pip install -e ".[test]"
@@ -176,7 +170,7 @@ Windows system tray icon.
 
 ```powershell
 # Install once
-pip install -e ".[tray]"
+pip install -e .
 
 # First launch with a terminal so any setup errors are visible
 chemunited-workflow-tray
