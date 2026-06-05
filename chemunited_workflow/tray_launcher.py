@@ -5,19 +5,22 @@ import base64
 from io import BytesIO
 from pathlib import Path
 import re
+import subprocess
 import sys
 import threading
 import traceback
 import webbrowser
+
+import requests
 
 from chemunited_workflow.api import create_api
 from chemunited_workflow.api.dependencies import get_project_holder
 from chemunited_workflow.project_loader import load_project
 
 
-REPO_ROOT = Path(__file__).resolve().parent
-DEFAULT_PROJECT_DIR = REPO_ROOT / "examples" / "custom_project"
-DEFAULT_ICON_PATH = REPO_ROOT / "chemunited_workflow" / "chemunited.svg"
+PACKAGE_ROOT = Path(__file__).resolve().parent
+REPO_ROOT = PACKAGE_ROOT.parent
+DEFAULT_ICON_PATH = PACKAGE_ROOT / "chemunited.svg"
 ERROR_LOG_PATH = REPO_ROOT / "tray_launcher.log"
 
 
@@ -28,7 +31,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--project-dir",
         type=Path,
-        default=DEFAULT_PROJECT_DIR,
+        default=None,
         help="Project directory containing protocols/ and connectivity/.",
     )
     parser.add_argument(
@@ -47,11 +50,22 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default=None,
         help="URL opened by the tray menu. Defaults to http://{host}:{port}/docs.",
     )
+    parser.add_argument(
+        "--silent",
+        action="store_true",
+        default=False,
+        help="On Windows, relaunch with pythonw.exe so no terminal window stays open.",
+    )
     return parser.parse_args(argv)
 
 
+def build_base_url(host: str, port: int) -> str:
+    display_host = "127.0.0.1" if host in {"0.0.0.0", "::"} else host
+    return f"http://{display_host}:{port}"
+
+
 def build_app_url(host: str, port: int, url: str | None = None) -> str:
-    return url or f"http://{host}:{port}/docs"
+    return url or f"{build_base_url(host, port)}/docs"
 
 
 def _square_icon(image, size: int = 64):
@@ -140,13 +154,17 @@ def create_tray_badge_icon(size: int = 64):
 
 
 def load_tray_icon_image(svg_path: Path = DEFAULT_ICON_PATH, size: int = 64):
-    return create_tray_badge_icon(size=size)
+    try:
+        return load_embedded_png_icon(svg_path, size=size)
+    except Exception:
+        return create_fallback_icon(size=size)
 
 
-def create_fastapi_app(project_dir: Path):
+def create_fastapi_app(project_dir: Path | None):
     app = create_api()
-    modules = load_project(project_dir.resolve())
-    app.dependency_overrides[get_project_holder]().load(modules)
+    if project_dir is not None:
+        modules = load_project(project_dir.resolve())
+        app.dependency_overrides[get_project_holder]().load(modules)
     return app
 
 
@@ -210,17 +228,93 @@ def run_tray(server, server_thread: threading.Thread, app_url: str) -> None:
     icon.run()
 
 
-def main(argv: list[str] | None = None) -> None:
+def is_api_reachable(base_url: str, timeout: float = 0.5) -> bool:
+    try:
+        response = requests.get(f"{base_url}/project/", timeout=timeout)
+    except requests.RequestException:
+        return False
+    return response.status_code == 200
+
+
+def load_project_into_running_api(
+    base_url: str,
+    project_dir: Path,
+    timeout: float = 10.0,
+) -> dict:
+    response = requests.put(
+        f"{base_url}/project/",
+        json={"project_dir": str(project_dir.resolve())},
+        timeout=timeout,
+    )
+    if response.status_code >= 400:
+        raise RuntimeError(
+            "Failed to load project into the running chemunited API "
+            f"at {base_url}: HTTP {response.status_code} {response.text}"
+        )
+    return response.json()
+
+
+def _pythonw_executable() -> Path | None:
+    executable = Path(sys.executable)
+    if executable.stem.lower() == "pythonw":
+        return None
+
+    candidate = executable.with_name("pythonw.exe")
+    if candidate.exists():
+        return candidate
+    return None
+
+
+def relaunch_silently(argv: list[str]) -> bool:
+    pythonw = _pythonw_executable()
+    if pythonw is None:
+        return False
+
+    creationflags = 0
+    if sys.platform == "win32":
+        creationflags = (
+            subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP
+        )
+
+    subprocess.Popen(
+        [str(pythonw), "-m", "chemunited_workflow.tray_launcher", *argv],
+        close_fds=True,
+        creationflags=creationflags,
+    )
+    return True
+
+
+def run(argv: list[str] | None = None) -> None:
     try:
         ERROR_LOG_PATH.unlink(missing_ok=True)
     except OSError:
         pass
-    args = parse_args(argv)
-    project_dir = args.project_dir.resolve()
+
+    raw_argv = list(sys.argv[1:] if argv is None else argv)
+    args = parse_args(raw_argv)
+    if args.silent and relaunch_silently(raw_argv):
+        return
+
+    base_url = build_base_url(args.host, args.port)
+    if is_api_reachable(base_url):
+        if args.project_dir is not None:
+            load_project_into_running_api(base_url, args.project_dir.resolve())
+        return
+
+    project_dir = args.project_dir.resolve() if args.project_dir is not None else None
     app_url = build_app_url(args.host, args.port, args.url)
     app = create_fastapi_app(project_dir)
     server, server_thread = start_uvicorn_thread(app, args.host, args.port)
     run_tray(server, server_thread, app_url)
+
+
+def main(argv: list[str] | None = None) -> None:
+    try:
+        run(argv)
+    except Exception as exc:
+        _report_startup_error(exc)
+        if Path(sys.executable).stem.lower() != "pythonw":
+            raise
 
 
 def _report_startup_error(exc: BaseException) -> None:
@@ -239,9 +333,4 @@ def _report_startup_error(exc: BaseException) -> None:
 
 
 if __name__ == "__main__":
-    try:
-        main()
-    except Exception as exc:
-        _report_startup_error(exc)
-        if Path(sys.executable).stem.lower() != "pythonw":
-            raise
+    main()

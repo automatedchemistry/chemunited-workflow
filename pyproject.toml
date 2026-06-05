@@ -40,6 +40,7 @@ test = [
 
 [project.scripts]
 chemunited-workflow = "chemunited_workflow.cli:main"
+chemunited-workflow-tray = "chemunited_workflow.tray_launcher:main"
 
 [tool.setuptools]
 packages = [

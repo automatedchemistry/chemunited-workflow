@@ -171,29 +171,33 @@ chemunited-workflow --mcp-http --port 3117
 
 ### Windows tray launcher
 
-Use the root `tray_launcher.py` script when you want the FastAPI app to run as a
-Windows background process with a system tray icon.
+Use `chemunited-workflow-tray` when you want the FastAPI app to run with a
+Windows system tray icon.
 
 ```powershell
 # Install once
 pip install -e ".[tray]"
 
 # First launch with a terminal so any setup errors are visible
-.\.venv\Scripts\python.exe tray_launcher.py
+chemunited-workflow-tray
 
-# Then launch silently with no terminal window
-.\.venv\Scripts\pythonw.exe tray_launcher.py
+# Or launch silently with no terminal window kept open
+chemunited-workflow-tray --silent
 ```
 
-By default, the launcher loads `examples/custom_project` and opens
-`http://127.0.0.1:3116/docs`. To use a different project or port:
+By default, the launcher starts without a project loaded and opens
+`http://127.0.0.1:3116/docs` from the tray menu. To use a project or a different
+port:
 
 ```powershell
-.\.venv\Scripts\pythonw.exe tray_launcher.py --project-dir C:/path/to/my_project --port 3116
+chemunited-workflow-tray --project-dir C:/path/to/my_project --port 3116
 ```
 
-Use the venv executable explicitly. A plain `pythonw tray_launcher.py` may use a
-different global Python environment that does not have `pystray` installed.
+If a chemunited API is already running on the requested host and port, the tray
+command does not start another server. With `--project-dir`, it loads that
+project into the running API through `PUT /project/`; without `--project-dir`,
+it exits without changing anything.
+
 If the silent launcher fails during startup, it writes details to
 `tray_launcher.log`.
 
