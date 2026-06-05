@@ -337,7 +337,11 @@ def _report_startup_error(exc: BaseException) -> None:
     try:
         import ctypes
 
-        ctypes.windll.user32.MessageBoxW(
+        windll = getattr(ctypes, "windll", None)
+        if windll is None:
+            raise RuntimeError("ctypes.windll is unavailable")
+
+        windll.user32.MessageBoxW(
             None,
             f"Tray launcher failed.\n\nDetails were written to:\n{ERROR_LOG_PATH}",
             "chemunited-workflow",
