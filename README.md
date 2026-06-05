@@ -1,5 +1,10 @@
 # chemunited-workflow
 
+[![Pre-commit](https://github.com/automatedchemistry/chemunited-workflow/actions/workflows/pre-commit.yml/badge.svg)](https://github.com/automatedchemistry/chemunited-workflow/actions/workflows/pre-commit.yml)
+[![Security Analysis](https://github.com/automatedchemistry/chemunited-workflow/actions/workflows/security.yml/badge.svg)](https://github.com/automatedchemistry/chemunited-workflow/actions/workflows/security.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![PyPI](https://img.shields.io/pypi/v/chemunited-workflow.svg)](https://pypi.org/project/chemunited-workflow/)
+
 A NetworkX-based workflow execution engine for conditional automation of chemistry experiments. Designed for hardware-in-the-loop laboratory protocols where operations depend on device responses, physical measurements, and branching conditions.
 
 ## Features
