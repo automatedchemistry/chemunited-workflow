@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import threading
+import time
 from dataclasses import dataclass
 
 import pytest
@@ -12,7 +13,10 @@ import responses as resp_lib
 
 from chemunited_workflow.clients import BaseClient, ComponentClient
 from chemunited_workflow.durations import parse_timeout_commands
-from chemunited_workflow.exceptions import ConcurrentClientAccessError
+from chemunited_workflow.exceptions import (
+    ConcurrentClientAccessError,
+    RunCancelledError,
+)
 from chemunited_workflow.quantity import ChemUnitQuantity
 
 BASE_URL = "http://device-server:8000"
@@ -145,6 +149,47 @@ def test_poll_feedback_without_timeout_runs_until_expected(mocker):
     client._poll_feedback("is-ready", "true", interval=0, timeout=None)
 
     assert calls == ["is-ready", "is-ready", "is-ready"]
+
+
+def test_wait_time_stops_when_cancelled():
+    cancel_event = threading.Event()
+    client = ComponentClient(BASE_URL, dry_run=True, cancellation_token=cancel_event)
+
+    timer = threading.Timer(0.05, cancel_event.set)
+    started = time.monotonic()
+    timer.start()
+    try:
+        with pytest.raises(RunCancelledError):
+            client.get("/x", wait_time=5.0)
+    finally:
+        timer.cancel()
+
+    assert time.monotonic() - started < 1.0
+
+
+def test_indefinite_feedback_polling_stops_when_cancelled(mocker):
+    response = requests.Response()
+    response.status_code = 200
+    response._content = b"false"
+    mocker.patch.object(BaseClient, "get", return_value=response)
+
+    cancel_event = threading.Event()
+    client = ComponentClient(
+        BASE_URL,
+        timeout_commands="",
+        cancellation_token=cancel_event,
+    )
+
+    timer = threading.Timer(0.05, cancel_event.set)
+    started = time.monotonic()
+    timer.start()
+    try:
+        with pytest.raises(RunCancelledError):
+            client._poll_feedback("is-ready", "true", interval=5.0, timeout=None)
+    finally:
+        timer.cancel()
+
+    assert time.monotonic() - started < 1.0
 
 
 # ── ComponentClient: concurrency guard ───────────────────────────────────────

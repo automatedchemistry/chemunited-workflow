@@ -2,7 +2,13 @@
 
 from __future__ import annotations
 
-from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
+from concurrent.futures import (
+    FIRST_COMPLETED,
+    CancelledError,
+    Future,
+    ThreadPoolExecutor,
+    wait,
+)
 from dataclasses import dataclass
 from threading import RLock
 from time import perf_counter
@@ -13,6 +19,7 @@ from loguru import logger
 
 from .clients import _pop_thread_resilient_errors
 from .enums import NodeState, WorkflowEventType
+from .exceptions import RunCancelledError
 from .models import (
     CompiledWorkflow,
     LoopBackSpec,
@@ -49,6 +56,7 @@ class WorkflowExecutor:
         event_listeners: Sequence[EventListener] | None = None,
         error_resilient: bool = False,
         process_key: str | None = None,
+        cancellation_check: Callable[[], bool] | None = None,
     ) -> None:
         self._compiled = compiled_workflow
         self._max_workers = max_workers
@@ -57,6 +65,7 @@ class WorkflowExecutor:
         self._event_listeners = tuple(event_listeners or ())
         self._error_resilient = error_resilient
         self._process_key = process_key
+        self._cancellation_check = cancellation_check
 
         self._state = WorkflowExecutorState()
         self._loopbacks_by_trigger: dict[tuple[str, bool], LoopBackSpec] = {}
@@ -107,9 +116,17 @@ class WorkflowExecutor:
                 self._initialize_iteration(start_node=start_node, iteration=0)
 
                 while self._future_to_key:
+                    if self._is_cancelled():
+                        self._stop_scheduling = True
+                        for pending in self._future_to_key:
+                            pending.cancel()
                     done, _ = wait(
-                        tuple(self._future_to_key), return_when=FIRST_COMPLETED
+                        tuple(self._future_to_key),
+                        timeout=0.1,
+                        return_when=FIRST_COMPLETED,
                     )
+                    if not done:
+                        continue
                     for future in done:
                         node_key = self._future_to_key.pop(future)
                         self._handle_completed_future(node_key=node_key, future=future)
@@ -146,6 +163,9 @@ class WorkflowExecutor:
             errors=dict(self._state.errors),
             process=self._process_key,
         )
+
+    def _is_cancelled(self) -> bool:
+        return bool(self._cancellation_check and self._cancellation_check())
 
     def _initialize_iteration(self, start_node: str, iteration: int) -> None:
         if self._process is None or self._pool is None:
@@ -210,6 +230,8 @@ class WorkflowExecutor:
         self._state.scheduled.setdefault(node_key, False)
 
     def _maybe_schedule(self, node_key: NodeKey) -> None:
+        if self._is_cancelled():
+            self._stop_scheduling = True
         if self._stop_scheduling:
             return
 
@@ -273,6 +295,8 @@ class WorkflowExecutor:
             raise RuntimeError(
                 "WorkflowExecutor.execute() must be called before running nodes."
             )
+        if self._is_cancelled():
+            raise RunCancelledError("Run was cancelled.")
 
         node_id, iteration = node_key
         node_data = self._compiled.exec_graph.nodes[node_id]
@@ -314,6 +338,8 @@ class WorkflowExecutor:
         _pop_thread_resilient_errors()  # clear stale errors from thread pool reuse
         try:
             result = method(ctx)
+            if self._is_cancelled():
+                raise RunCancelledError("Run was cancelled.")
             if not isinstance(result, bool):
                 raise TypeError(
                     f"Workflow method {method_name!r} for node {node_id!r} returned {result!r}. "
@@ -343,6 +369,18 @@ class WorkflowExecutor:
     ) -> None:
         try:
             outcome = future.result()
+        except CancelledError:
+            exc = RunCancelledError("Run was cancelled.")
+            self._state.errors[node_key] = exc
+            self._state.node_result[node_key] = None
+            self._update_node_status(
+                node_key,
+                state=NodeState.FAILED,
+                message=f"Node execution failed: {exc}",
+                event_type=WorkflowEventType.NODE_FAILED,
+            )
+            self._stop_scheduling = True
+            return
         except Exception as exc:
             self._state.errors[node_key] = exc
             self._state.node_result[node_key] = None
@@ -352,6 +390,9 @@ class WorkflowExecutor:
                 message=f"Node execution failed: {exc}",
                 event_type=WorkflowEventType.NODE_FAILED,
             )
+            if isinstance(exc, RunCancelledError):
+                self._stop_scheduling = True
+                return
             if self._error_resilient:
                 self._logger.warning(
                     "Node {!r} failed: {}. Continuing because error_resilient=True.",
@@ -381,6 +422,10 @@ class WorkflowExecutor:
         self._route_after_completion(node_key=node_key, result=outcome.result)
 
     def _route_after_completion(self, node_key: NodeKey, result: bool) -> None:
+        if self._is_cancelled():
+            self._stop_scheduling = True
+            return
+
         node_id, iteration = node_key
         loopback = self._loopbacks_by_trigger.get((node_id, result))
 

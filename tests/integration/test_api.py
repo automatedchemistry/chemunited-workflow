@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import sys
 import time
 from pathlib import Path
 
@@ -15,11 +16,44 @@ from tests.helpers import make_project_tree
 
 FIXTURES = Path(__file__).parent.parent / "fixtures"
 
+CANCELLABLE_PROCESS_SRC = """
+from pathlib import Path
+
+from pydantic import BaseModel
+from chemunited_workflow import Process, NodeExecutionContext, WorkflowNodeSpec
+import networkx as nx
+
+
+class SlowConfig(BaseModel):
+    value: float = 1.0
+    marker_path: str
+
+
+class SlowProcess(Process):
+    def build_workflow(self):
+        graph = nx.DiGraph()
+        graph.add_node(
+            "start",
+            **WorkflowNodeSpec(
+                node_id="start",
+                method="start",
+                label="Start",
+            ).model_dump(exclude_none=True),
+        )
+        return graph
+
+    def start(self, ctx: NodeExecutionContext) -> bool:
+        Path(self.config.marker_path).write_text("waiting", encoding="utf-8")
+        self.platform["pump"].get("/x", wait_time=5.0)
+        return True
+"""
+
 
 def _load_module(path: Path, name: str):
     spec = importlib.util.spec_from_file_location(name, path)
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
+    sys.modules[name] = module
     spec.loader.exec_module(module)
     return module
 
@@ -208,6 +242,95 @@ def test_cancel_run(client):
 def test_cancel_unknown_run(client):
     r = client.delete("/run/no-such-id")
     assert r.status_code == 404
+
+
+def test_cancel_run_interrupts_client_wait(tmp_path):
+    dirs = make_project_tree(tmp_path)
+    wait_marker = tmp_path / "client_wait_started.txt"
+    (dirs["connectivity_dir"] / "associations.json").write_text(
+        json.dumps(
+            {
+                "server_url": "http://device-server:8000",
+                "associations": [{"component": "pump", "component_url": "pump"}],
+            }
+        ),
+        encoding="utf-8",
+    )
+    (dirs["process_dir"] / "slow_process.py").write_text(
+        CANCELLABLE_PROCESS_SRC,
+        encoding="utf-8",
+    )
+    (dirs["historic_dir"] / "slow_run.json").write_text(
+        json.dumps(
+            {
+                "main_parameter": {
+                    "reagent_volume_ml": 5.0,
+                    "target_temperature_c": 25.0,
+                },
+                "slow_process_0": {
+                    "value": 1.0,
+                    "marker_path": str(wait_marker),
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    from chemunited_workflow.api.dependencies import get_project_holder
+    from chemunited_workflow.project_loader import ProjectModules
+
+    slow_mod = _load_module(dirs["process_dir"] / "slow_process.py", "slow_process")
+    main_mod = _load_module(
+        dirs["process_dir"] / "main_parameters.py",
+        "main_parameters_for_cancel",
+    )
+    api = create_api()
+    holder = api.dependency_overrides[get_project_holder]()
+    holder.load(
+        ProjectModules(
+            project_dir=tmp_path,
+            processes={"slow_process": slow_mod.SlowProcess},
+            configs={"slow_process": slow_mod.SlowConfig},
+            main_parameter_class=main_mod.MainParameter,
+        )
+    )
+    local_client = TestClient(api)
+
+    r = local_client.post(
+        "/run/",
+        json={"snapshot": "slow_run.json", "dry_run": True},
+    )
+    assert r.status_code == 202
+    run_id = r.json()["run_id"]
+
+    deadline = time.monotonic() + 2.0
+    status = None
+    while time.monotonic() < deadline:
+        status = local_client.get(f"/run/{run_id}/status").json()
+        if wait_marker.exists():
+            break
+        time.sleep(0.05)
+    assert wait_marker.exists(), status
+
+    started = time.monotonic()
+    cr = local_client.delete(f"/run/{run_id}")
+    assert cr.status_code == 204
+
+    report = None
+    deadline = time.monotonic() + 2.0
+    while time.monotonic() < deadline:
+        rr = local_client.get(f"/run/{run_id}/report")
+        assert rr.status_code == 200
+        report = rr.json()
+        if report["results"]:
+            break
+        time.sleep(0.05)
+
+    assert report is not None
+    assert report["state"] == "cancelled"
+    assert report["results"]
+    assert time.monotonic() - started < 1.0
+    assert "Run was cancelled" in next(iter(report["results"][0]["errors"].values()))
 
 
 # ── /components ───────────────────────────────────────────────────────────────

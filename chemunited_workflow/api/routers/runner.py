@@ -184,9 +184,10 @@ async def cancel_run(
 ):
     """Cancel an active run.
 
-    Sets the run state to `cancelled`. The currently executing process step
-    will run to completion before the runner stops — this is intentional to
-    avoid leaving physical devices in an undefined state mid-operation.
+    Sets the run state to `cancelled` and signals the active executor and
+    component clients to stop cooperatively. Framework-controlled waits and
+    feedback polling stop promptly; arbitrary user Python code and already
+    in-flight HTTP requests are not forcibly killed.
     Returns 404 if the run does not exist or is already in a terminal state.
     """
     if not svc._run_store.cancel(run_id):

@@ -21,6 +21,7 @@ class RunState(str, Enum):
 class RunRecord:
     run_id: str
     state: RunState = RunState.RUNNING
+    cancel_event: threading.Event = field(default_factory=threading.Event)
     events: list[WorkflowExecutionEvent] = field(default_factory=list)
     results: list[WorkflowResult] = field(default_factory=list)
 
@@ -56,11 +57,18 @@ class RunStore:
     def set_state(self, run_id: str, success: bool) -> None:
         with self._lock:
             rec = self._records[run_id]
+            if rec.state == RunState.CANCELLED:
+                return
             rec.state = RunState.FINISHED if success else RunState.FAILED
 
     def get(self, run_id: str) -> RunRecord | None:
         with self._lock:
             return self._records.get(run_id)
+
+    def cancel_event(self, run_id: str) -> threading.Event | None:
+        with self._lock:
+            rec = self._records.get(run_id)
+            return rec.cancel_event if rec is not None else None
 
     def cancel(self, run_id: str) -> bool:
         with self._lock:
@@ -68,6 +76,7 @@ class RunStore:
             if rec is None or rec.state != RunState.RUNNING:
                 return False
             rec.state = RunState.CANCELLED
+            rec.cancel_event.set()
             return True
 
     @property

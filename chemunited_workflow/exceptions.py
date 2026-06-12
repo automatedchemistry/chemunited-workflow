@@ -3,3 +3,7 @@
 
 class ConcurrentClientAccessError(RuntimeError):
     """Raised when a ComponentClient is accessed from more than one thread at a time."""
+
+
+class RunCancelledError(RuntimeError):
+    """Raised internally when a workflow run is cancelled cooperatively."""

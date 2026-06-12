@@ -95,12 +95,14 @@ class RunnerService:
             if pool_dir.exists():
                 for f in pool_dir.glob("*.jsonl"):
                     f.unlink(missing_ok=True)
+            cancellation_token = self._run_store.cancel_event(run_id)
             platform = Platform.from_project_dir(
                 self._project_dir,
                 dry_run=dry_run,
                 log_dir=self._project_dir / "log",
                 timeout_commands=timeout_commands,
                 error_resilient=error_resilient,
+                cancellation_token=cancellation_token,
             )
             for process_name, process_index in sequence:
                 record = self._run_store.get(run_id)
@@ -125,6 +127,11 @@ class RunnerService:
                     ],
                     error_resilient=error_resilient,
                     process_key=f"{process_name}_{process_index}",
+                    cancellation_check=(
+                        cancellation_token.is_set
+                        if cancellation_token is not None
+                        else None
+                    ),
                 )
                 result = executor.execute(process, start_node="start")
                 self._run_store.append_result(run_id, result)

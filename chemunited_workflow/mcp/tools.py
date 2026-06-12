@@ -189,8 +189,7 @@ def register_tools(mcp: FastMCP, holder: ProjectHolder) -> None:
 
     @mcp.tool()
     def cancel_run(run_id: str) -> dict:
-        """Cancel an active run. The current process step will finish before
-        the runner stops."""
+        """Cancel an active run and signal clients to stop cooperatively."""
         if not holder.is_loaded():
             return {"error": _NO_PROJECT}
         ok = holder.run_store.cancel(run_id)

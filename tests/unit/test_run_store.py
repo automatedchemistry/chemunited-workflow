@@ -46,8 +46,24 @@ def test_pop_events_returns_appended_and_clears():
 def test_cancel_running_returns_true():
     store = RunStore()
     run_id = store.create()
+    cancel_event = store.cancel_event(run_id)
+    assert cancel_event is not None
+    assert not cancel_event.is_set()
+
     result = store.cancel(run_id)
+
     assert result is True
+    assert store.get(run_id).state == RunState.CANCELLED
+    assert cancel_event.is_set()
+
+
+def test_cancelled_state_is_sticky():
+    store = RunStore()
+    run_id = store.create()
+    assert store.cancel(run_id) is True
+
+    store.set_state(run_id, success=True)
+
     assert store.get(run_id).state == RunState.CANCELLED
 
 

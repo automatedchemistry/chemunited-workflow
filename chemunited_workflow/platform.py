@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import threading
 from collections.abc import Mapping
 from pathlib import Path
 
@@ -42,6 +43,7 @@ class Platform(Mapping[str, ComponentClient]):
         log_dir: Path | None = None,
         timeout_commands: str = "10 s",
         error_resilient: bool = False,
+        cancellation_token: threading.Event | None = None,
     ) -> "Platform":
         """Build a Platform from a connectivity/associations.json file.
 
@@ -79,6 +81,7 @@ class Platform(Mapping[str, ComponentClient]):
                 pool_json_log=pool_json_log,
                 timeout_commands=timeout_commands,
                 error_resilient=error_resilient,
+                cancellation_token=cancellation_token,
             )
         return cls(components)
 
@@ -91,6 +94,7 @@ class Platform(Mapping[str, ComponentClient]):
         log_dir: Path | None = None,
         timeout_commands: str = "10 s",
         error_resilient: bool = False,
+        cancellation_token: threading.Event | None = None,
     ) -> "Platform":
         """Shorthand: load from ``{project_dir}/connectivity/associations.json``."""
         return cls.from_connectivity(
@@ -99,4 +103,5 @@ class Platform(Mapping[str, ComponentClient]):
             log_dir=log_dir,
             timeout_commands=timeout_commands,
             error_resilient=error_resilient,
+            cancellation_token=cancellation_token,
         )

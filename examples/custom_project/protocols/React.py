@@ -261,7 +261,13 @@ class CustomProcess(Process[ProcessConfig]):
         ctx.runtime.status_message = "Script 5 ran."
         self.platform["AS Distribution valve"].put("position", connect="[[0, 2]]")
         self.platform["AS pump"].put(
-            "infuse", volume="10 ml", rate="50 ml/min", wait_time=12
+            "infuse",
+            volume="10 ml",
+            rate="50 ml/min",
+            wait_time=12,
+            wait_feedback_status=False,
+            feedback_status_command="is-pumping",
+            feedback_answer="false",
         )
         self.platform["gantry"].put("set_x_position", position="1")
         self.platform["gantry"].put("set_y_position", position="A")

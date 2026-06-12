@@ -15,7 +15,7 @@ from loguru import logger
 from pydantic import AnyHttpUrl
 
 from .durations import parse_timeout_commands
-from .exceptions import ConcurrentClientAccessError
+from .exceptions import ConcurrentClientAccessError, RunCancelledError
 
 
 _thread_resilient_errors = threading.local()
@@ -183,6 +183,7 @@ class ComponentClient(BaseClient):
         pool_json_log: Path | None = None,
         timeout_commands: str = "10 s",
         error_resilient: bool = False,
+        cancellation_token: threading.Event | None = None,
     ) -> None:
         super().__init__(url, dry_run=dry_run)
         feedback_timeout = parse_timeout_commands(timeout_commands)
@@ -192,6 +193,7 @@ class ComponentClient(BaseClient):
         self.timeout_commands = timeout_commands.strip()
         self._feedback_timeout = feedback_timeout
         self._error_resilient = error_resilient
+        self._cancellation_token = cancellation_token
 
     def _write_json_log(self, data: dict[str, Any]) -> None:
         if self.pool_json_log is None:
@@ -211,6 +213,7 @@ class ComponentClient(BaseClient):
             _push_thread_resilient_error(exc)
 
     def _request(self, method: str, path: str, **kwargs) -> requests.Response:
+        self._raise_if_cancelled()
         if not self._access_lock.acquire(blocking=False):
             raise ConcurrentClientAccessError(
                 f"{type(self).__name__}(url={self.base_url!r}) was accessed from two threads "
@@ -218,9 +221,30 @@ class ComponentClient(BaseClient):
                 "at a time — check your workflow graph for nodes that share the same device."
             )
         try:
-            return super()._request(method, path, **kwargs)
+            response = super()._request(method, path, **kwargs)
+            self._raise_if_cancelled()
+            return response
         finally:
             self._access_lock.release()
+
+    def _raise_if_cancelled(self) -> None:
+        if self._cancellation_token is not None and self._cancellation_token.is_set():
+            raise RunCancelledError("Run was cancelled.")
+
+    def _sleep_interruptibly(self, duration: float) -> None:
+        if duration <= 0:
+            return
+        if self._cancellation_token is None:
+            time.sleep(duration)
+            return
+
+        deadline = time.monotonic() + duration
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                return
+            if self._cancellation_token.wait(timeout=min(remaining, 0.1)):
+                raise RunCancelledError("Run was cancelled.")
 
     @staticmethod
     def _merge_query_params(
@@ -316,7 +340,7 @@ class ComponentClient(BaseClient):
         feedback_answer: str,
     ) -> None:
         if wait_time > 0:
-            time.sleep(wait_time)
+            self._sleep_interruptibly(wait_time)
         if wait_feedback_status and feedback_status_command:
             self._poll_feedback(
                 feedback_status_command,
@@ -334,10 +358,12 @@ class ComponentClient(BaseClient):
     ) -> None:
         deadline = None if timeout is None else time.monotonic() + timeout
         while deadline is None or time.monotonic() < deadline:
+            self._raise_if_cancelled()
             resp = super().get(status_command)
+            self._raise_if_cancelled()
             if resp.text.strip() == expected:
                 return
-            time.sleep(interval)
+            self._sleep_interruptibly(interval)
         exc = TimeoutError(
             f"Feedback '{status_command}' did not return '{expected}' within {timeout}s"
         )
