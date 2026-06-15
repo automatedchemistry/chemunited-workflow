@@ -1,12 +1,18 @@
 {% extends "base.html" %}
-{% block title %}Dashboard - ChemUnited{% endblock %}
-{% block page_label %}Dashboard{% endblock %}
+{% block title %}Flow Synthesis — Dashboard{% endblock %}
+{% block page_label %}Flow Synthesis Reactor{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="/project-static/custom.css">
+{% endblock %}
 
 {% block content %}
+<div class="custom-banner">&#9879; Custom project UI — examples/custom_project</div>
+
 <header class="page-header">
   <div>
-    <span class="eyebrow">System overview</span>
-    <h1>Control Dashboard</h1>
+    <span class="eyebrow">Custom Project · Flow Synthesis</span>
+    <h1>Flow Synthesis Dashboard</h1>
     <p>Monitor active protocol execution, recent snapshots, logs, and readiness from one operator surface.</p>
   </div>
   <div class="page-actions">

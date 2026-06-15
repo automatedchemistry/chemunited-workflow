@@ -1,44 +1,64 @@
 {% extends "base.html" %}
-{% block title %}Logs — ChemUnited{% endblock %}
+{% block title %}Logs - ChemUnited{% endblock %}
+{% block page_label %}Logs{% endblock %}
 
 {% block content %}
-<h1>Logs</h1>
+<header class="page-header">
+  <div>
+    <span class="eyebrow">Operational traces</span>
+    <h1>Logs</h1>
+    <p>Browse execution logs and tail the selected file while a run is active.</p>
+  </div>
+</header>
 
 {% if not project_loaded %}
-<article>No project loaded. <a href="/">Return to Dashboard</a>.</article>
+<section class="empty-state">
+  <h2>No project loaded</h2>
+  <p>Load a project to inspect logs. <a href="/">Return to Dashboard</a>.</p>
+</section>
 {% else %}
-<div class="grid">
-  <section style="max-width:280px">
-    <h2>Log Files</h2>
+<div class="split-grid">
+  <section class="panel">
+    <div class="panel-header">
+      <div>
+        <h2>Log Files</h2>
+        <p>Choose a file to load the latest content.</p>
+      </div>
+    </div>
     {% if log_files %}
-    <ul style="list-style:none;padding:0">
+    <ul class="log-list">
       {% for l in log_files %}
-      <li style="margin-bottom:0.4rem">
+      <li>
         <a href="#"
            hx-get="/ui/fragments/log/{{ l.filename }}"
            hx-target="#log-content"
            hx-swap="innerHTML"
-           hx-push-url="false"
-           style="font-size:0.9em">{{ l.filename }}</a>
-        <br><small style="color:var(--pico-muted-color)">{{ l.modified }}</small>
+           hx-push-url="false">{{ l.filename }}</a>
+        <small>{{ l.modified }}</small>
       </li>
       {% endfor %}
     </ul>
     {% else %}
-      <p>No log files.</p>
+      <p class="muted">No log files.</p>
     {% endif %}
   </section>
 
-  <section>
-    <h2>
-      Log Content
-      {% if selected_log %}
-        — <code>{{ selected_log }}</code>
-        {% if active_run_id %}
-          <small id="auto-refresh-label">(auto-refreshing)</small>
+  <section class="panel">
+    <div class="panel-header">
+      <div>
+        <h2>Log Content</h2>
+        {% if selected_log %}
+          <p>
+            <code>{{ selected_log }}</code>
+            {% if active_run_id %}
+              <span id="auto-refresh-label" class="badge running">Auto-refreshing</span>
+            {% endif %}
+          </p>
+        {% else %}
+          <p>Select a log file from the list.</p>
         {% endif %}
-      {% endif %}
-    </h2>
+      </div>
+    </div>
     <pre id="log-content"
          {% if selected_log and active_run_id %}
            hx-get="/ui/fragments/log/{{ selected_log }}"

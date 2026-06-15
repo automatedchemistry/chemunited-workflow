@@ -1,24 +1,40 @@
 {% extends "base.html" %}
-{% block title %}Report {{ run_id[:8] }} — ChemUnited{% endblock %}
+{% block title %}Report {{ run_id[:8] }} - ChemUnited{% endblock %}
+{% block page_label %}Run Report{% endblock %}
 
 {% block content %}
-<h1>Run Report</h1>
-<p>
-  <strong>Run ID:</strong> <code>{{ run_id }}</code> &nbsp;
-  <span class="badge {{ state }}">{{ state }}</span>
-</p>
-<p><a href="/run-control">&larr; Back to Run Control</a></p>
+<header class="page-header">
+  <div>
+    <span class="eyebrow">Execution report</span>
+    <h1>Run Report</h1>
+    <p class="report-summary">
+      <span><strong>Run ID:</strong> <code class="run-id">{{ run_id }}</code></span>
+      <span class="badge {{ state }}">{{ state }}</span>
+    </p>
+  </div>
+  <div class="page-actions">
+    <a href="/run-control" role="button" class="outline">Back to Run Control</a>
+  </div>
+</header>
 
 {% if not results %}
-  <p>No results recorded for this run.</p>
+  <section class="empty-state">
+    <h2>No results recorded</h2>
+    <p>This run does not have recorded workflow results yet.</p>
+  </section>
 {% else %}
   {% for result in results %}
-  <article>
-    <header><strong>Process: {{ result.process or '(unnamed)' }}</strong></header>
+  <section class="panel table-panel report-block">
+    <div class="table-header">
+      <div>
+        <h2>Process: {{ result.process or '(unnamed)' }}</h2>
+        <span class="muted">Per-node execution outcomes and timing</span>
+      </div>
+    </div>
 
     {% block report_result_extra scoped %}{% endblock %}
 
-    <figure>
+    <div class="table-wrap">
       <table>
         <thead>
           <tr>
@@ -45,8 +61,8 @@
           {% endfor %}
         </tbody>
       </table>
-    </figure>
-  </article>
+    </div>
+  </section>
   {% endfor %}
 {% endif %}
 {% endblock %}

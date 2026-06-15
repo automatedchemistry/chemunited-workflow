@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en" data-theme="light">
+<html lang="en" data-theme="dark">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -9,23 +9,57 @@
   <script src="https://unpkg.com/htmx.org@2.0.4" integrity="sha384-HGfztofotfshcF7+8n44JQL2oJmowVChPTg48S+jvZoztPfvwD79OC/LTtG6dMp+" crossorigin="anonymous"></script>
   {% block extra_css %}{% endblock %}
 </head>
-<body>
-  <nav class="container-fluid">
-    <ul>
-      <li><strong><a href="/" class="contrast">ChemUnited</a></strong></li>
-    </ul>
-    <ul>
-      <li><a href="/">Dashboard</a></li>
-      <li><a href="/run-control">Run Control</a></li>
-      <li><a href="/snapshots-ui">Snapshots</a></li>
-      <li><a href="/logs-ui">Logs</a></li>
-      <li><a href="/devices">Devices</a></li>
-      {% block nav_extra %}{% endblock %}
-    </ul>
-  </nav>
-  <main class="container">
-    {% block content %}{% endblock %}
-  </main>
+<body class="cu-app">
+  {% set current_path = request.url.path %}
+  <div class="app-shell">
+    <aside class="app-sidebar" aria-label="Primary navigation">
+      <a href="/" class="brand-block">
+        <span class="brand-mark">CU</span>
+        <span>
+          <span class="brand-name">ChemUnited</span>
+          <span class="brand-subtitle">Workflow Control</span>
+        </span>
+      </a>
+
+      <nav class="sidebar-nav">
+        <a href="/" class="nav-item" {% if current_path == "/" %}aria-current="page"{% endif %}>Dashboard</a>
+        <a href="/run-control" class="nav-item" {% if current_path.startswith("/run-control") or current_path.startswith("/report") %}aria-current="page"{% endif %}>Run Control</a>
+        <a href="/snapshots-ui" class="nav-item" {% if current_path.startswith("/snapshots-ui") %}aria-current="page"{% endif %}>Snapshots</a>
+        <a href="/logs-ui" class="nav-item" {% if current_path.startswith("/logs-ui") %}aria-current="page"{% endif %}>Logs</a>
+        <a href="/devices" class="nav-item" {% if current_path.startswith("/devices") %}aria-current="page"{% endif %}>Devices</a>
+        {% block nav_extra %}{% endblock %}
+      </nav>
+
+      <div class="sidebar-footer">
+        <span class="status-dot idle"></span>
+        <span>Local control surface</span>
+      </div>
+    </aside>
+
+    <div class="app-workspace">
+      <header class="app-topbar">
+        <div>
+          <span class="eyebrow">Industrial Automation UI</span>
+          <strong>{% block page_label %}ChemUnited{% endblock %}</strong>
+        </div>
+        <div class="topbar-actions">
+          <div id="active-run-topbar"
+               class="topbar-status"
+               hx-get="/ui/fragments/active-run"
+               hx-trigger="load, every 5s"
+               hx-swap="innerHTML">
+            <span class="badge idle">No active run</span>
+          </div>
+          <a href="/docs" class="utility-link">API Docs</a>
+          {% block topbar_extra %}{% endblock %}
+        </div>
+      </header>
+
+      <main class="app-main">
+        {% block content %}{% endblock %}
+      </main>
+    </div>
+  </div>
   {% block extra_js %}{% endblock %}
 </body>
 </html>
