@@ -36,6 +36,9 @@ pip install -e .
 
 # With test dependencies
 pip install -e ".[test]"
+
+# With LAN advertisement (mDNS/Zeroconf)
+pip install -e ".[discovery]"
 ```
 
 ## Quick Start
@@ -150,6 +153,31 @@ chemunited-workflow serve --reload
 ```
 
 Once running, open `http://127.0.0.1:3116/` in a browser to see the HTML dashboard. The Swagger UI is still available at `/docs`.
+
+#### LAN advertisement (mDNS)
+
+Add `--advertise` to make the dashboard reachable from other machines on the same local network. The flag binds the server to `0.0.0.0` and registers an mDNS/Zeroconf record so other devices can discover it by name without knowing the IP address.
+
+```bash
+# Install the discovery extra first
+pip install -e ".[discovery]"
+
+# Advertise with the auto-generated name 'ChemUnited @ <hostname>'
+chemunited-workflow serve my_project/ --advertise
+
+# Use a custom name visible in network discovery
+chemunited-workflow serve my_project/ --advertise --advertise-name "Flow Synthesis Lab"
+```
+
+Expected output:
+```
+mDNS: advertising 'Flow Synthesis Lab' -> http://192.168.1.42:3116/
+INFO:     Uvicorn running on http://0.0.0.0:3116
+```
+
+Other machines on the LAN can then open `http://<hostname>.local:3116/` in a browser. The mDNS record is withdrawn cleanly when the server stops (Ctrl-C).
+
+> **Note:** No authentication is included. Anyone on the local network can reach the full API. Use only on trusted networks.
 
 To load or switch projects at runtime:
 

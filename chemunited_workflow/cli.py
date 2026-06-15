@@ -84,6 +84,23 @@ def main(ctx: click.Context) -> None:
     default=False,
     help="Enable auto-reload (development only, FastAPI only).",
 )
+@click.option(
+    "--advertise",
+    is_flag=True,
+    default=False,
+    help=(
+        "Advertise the dashboard on the LAN via mDNS so other machines can discover it "
+        "(requires pip install chemunited-workflow[discovery]). "
+        "Implies --host 0.0.0.0 when the default host is used."
+    ),
+)
+@click.option(
+    "--advertise-name",
+    "advertise_name",
+    default=None,
+    metavar="NAME",
+    help="Name shown in mDNS discovery. Defaults to 'ChemUnited @ <hostname>'.",
+)
 def serve(
     project_dir: Path | None,
     mode: str,
@@ -91,6 +108,8 @@ def serve(
     port: int | None,
     mcp_path: str,
     reload: bool,
+    advertise: bool,
+    advertise_name: str | None,
 ) -> None:
     """Start the server (FastAPI dashboard, MCP stdio, or MCP HTTP).
 
@@ -105,6 +124,15 @@ def serve(
       chemunited-workflow serve --reload          # dev mode, no project
       Dashboard:   http://127.0.0.1:3116/
       Swagger UI:  http://127.0.0.1:3116/docs
+
+    \b
+    LAN advertisement -- expose the dashboard to other machines on the network:
+      chemunited-workflow serve my_project/ --advertise
+      chemunited-workflow serve my_project/ --advertise --advertise-name "Flow Synthesis Lab"
+      Requires:  pip install chemunited-workflow[discovery]
+      Binds to 0.0.0.0 and registers an mDNS record so other devices can
+      discover the dashboard at http://<hostname>.local:3116/ without knowing
+      the server's IP address. The record is withdrawn cleanly on exit.
 
     \b
     MCP stdio -- expose workflows as tools to Claude or other LLM agents:
@@ -154,7 +182,55 @@ def serve(
                 raise click.BadParameter(str(exc), param_hint="project_dir") from exc
             app.dependency_overrides[get_project_holder]().load(modules)
 
-        uvicorn.run(app, host=host, port=resolved_port, reload=reload)
+        if advertise and host == "127.0.0.1":
+            host = "0.0.0.0"
+
+        zc = None
+        zc_info = None
+        if advertise:
+            try:
+                from zeroconf import ServiceInfo, Zeroconf
+            except ImportError:
+                raise click.UsageError(
+                    "--advertise requires the [discovery] extra:\n"
+                    "  pip install chemunited-workflow[discovery]"
+                )
+            import socket
+
+            _s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            try:
+                _s.connect(("8.8.8.8", 80))
+                lan_ip = _s.getsockname()[0]
+            finally:
+                _s.close()
+
+            hostname = socket.gethostname()
+            display_name = advertise_name or f"ChemUnited @ {hostname}"
+            # hostname for .local URL: spaces → hyphens; fall back to machine hostname
+            mdns_host = advertise_name.replace(" ", "-") if advertise_name else hostname
+            service_name = f"{display_name}._http._tcp.local."
+            zc_info = ServiceInfo(
+                "_http._tcp.local.",
+                service_name,
+                addresses=[socket.inet_aton(lan_ip)],
+                port=resolved_port,
+                properties={"path": "/"},
+                server=f"{mdns_host}.local.",
+            )
+            zc = Zeroconf()
+            zc.register_service(zc_info)
+            click.echo(
+                f"mDNS: advertising '{display_name}' -> "
+                f"http://{lan_ip}:{resolved_port}/ | "
+                f"http://{mdns_host}.local:{resolved_port}/"
+            )
+
+        try:
+            uvicorn.run(app, host=host, port=resolved_port, reload=reload)
+        finally:
+            if zc is not None:
+                zc.unregister_service(zc_info)
+                zc.close()
 
 
 @main.command("scaffold-ui")
