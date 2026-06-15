@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import mimetypes
 from pathlib import Path
+from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse, Response
@@ -149,13 +150,23 @@ async def devices(
     templates: Jinja2Templates = Depends(get_templates),
 ) -> HTMLResponse:
     svc = holder.protocol_service
-    associations: dict = svc.read_components() if svc else {}
+    associations: list[dict[str, Any]] = []
+    server_url = ""
+    if svc:
+        connectivity = svc.read_components()
+        server_url = connectivity.get("server_url", "").rstrip("/")
+        raw = connectivity.get("associations", [])
+        associations = [
+            {**a, "component_encoded": quote(a.get("component", ""), safe="")}
+            for a in raw
+        ]
     return templates.TemplateResponse(
         request,
         "devices.html",
         {
             "project_loaded": holder.is_loaded(),
             "associations": associations,
+            "server_url": server_url,
         },
     )
 
@@ -195,6 +206,17 @@ async def fragment_log(
     return HTMLResponse(content=str(escape(content)))
 
 
+def _status_badge(r: dict[str, Any]) -> str:
+    if r.get("error") == "not configured":
+        return '<span class="badge idle">unmapped</span>'
+    online = r.get("online", False)
+    badge_cls = "finished" if online else "failed"
+    latency_ms = r.get("latency_ms")
+    latency = f" · {latency_ms} ms" if latency_ms is not None else ""
+    text = f"online{latency}" if online else "offline"
+    return f'<span class="badge {badge_cls}">{text}</span>'
+
+
 @router.get("/ui/fragments/ping")
 async def fragment_ping(
     holder: ProjectHolder = Depends(get_project_holder),
@@ -203,31 +225,33 @@ async def fragment_ping(
     if svc is None:
         raise HTTPException(status_code=503, detail="No project loaded.")
     raw = await asyncio.to_thread(svc.ping_components)
-    # Service returns ComponentStatus objects or dicts depending on call path;
-    # normalise to dicts so the template code is uniform.
     results = [r.model_dump() if hasattr(r, "model_dump") else r for r in raw]
-    rows = []
-    for r in results:
-        online = r.get("online", False)
-        badge_cls = "finished" if online else "failed"
-        badge_text = "online" if online else "offline"
-        latency_ms = r.get("latency_ms")
-        latency = f"{latency_ms} ms" if latency_ms is not None else "—"
-        error = r.get("error") or ""
-        rows.append(
-            f"<tr><td>{r.get('component', '')}</td>"
-            f'<td><code>{r.get("url", "")}</code></td>'
-            f'<td><span class="badge {badge_cls}">{badge_text}</span> {latency}</td>'
-            f"<td><small>{error}</small></td></tr>"
-        )
-    if not rows:
+    if not results:
         return HTMLResponse(content="<p>No components configured.</p>")
-    table = (
-        "<table><thead><tr>"
-        "<th>Component</th><th>URL</th><th>Status</th><th>Error</th>"
-        "</tr></thead><tbody>" + "".join(rows) + "</tbody></table>"
-    )
-    return HTMLResponse(content=table)
+    parts = []
+    for r in results:
+        parts.append(
+            f'<span id="status-{r.get("component", "")}" '
+            f'hx-swap-oob="innerHTML">{_status_badge(r)}</span>'
+        )
+    return HTMLResponse(content="".join(parts))
+
+
+@router.get("/ui/fragments/ping/{component}")
+async def fragment_ping_one(
+    component: str,
+    holder: ProjectHolder = Depends(get_project_holder),
+) -> HTMLResponse:
+    svc = holder.protocol_service
+    if svc is None:
+        raise HTTPException(status_code=503, detail="No project loaded.")
+    try:
+        r = await asyncio.to_thread(svc.ping_component, component)
+    except KeyError:
+        raise HTTPException(
+            status_code=404, detail=f"Component '{component}' not found."
+        )
+    return HTMLResponse(content=_status_badge(r))
 
 
 # ── Project-specific static assets ────────────────────────────────────────────

@@ -8,43 +8,64 @@
 <article>No project loaded. <a href="/">Return to Dashboard</a>.</article>
 {% else %}
 
-<section>
-  <h2>Configured Components</h2>
-  <figure>
-    <table>
-      <thead>
-        <tr><th>Component</th><th>URL</th></tr>
-      </thead>
-      <tbody>
-        {% for comp, url in associations.items() %}
-        <tr>
-          <td>{{ comp }}</td>
-          <td>
-            {% if url %}
-              <code>{{ url }}</code>
-            {% else %}
-              <span class="not-configured">not configured</span>
-              <span class="badge idle">unmapped</span>
-            {% endif %}
-          </td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  </figure>
-</section>
+<div style="display:flex;align-items:center;gap:0.75rem;margin-bottom:1rem">
+  <button onclick="pingAll()" id="ping-all-btn">Ping All</button>
+  <small style="color:var(--pico-muted-color)">{{ associations|length }} component(s) · {{ server_url }}</small>
+</div>
 
-<section>
-  <h2>Connectivity Check</h2>
-  <button
-    hx-get="/ui/fragments/ping"
-    hx-target="#ping-results"
-    hx-swap="innerHTML"
-    hx-indicator="#ping-spinner"
-  >Ping All</button>
-  <span id="ping-spinner" aria-busy="true" style="display:none;margin-left:0.5rem"></span>
-  <div id="ping-results" style="margin-top:1rem"></div>
-</section>
+<figure>
+  <table>
+    <thead>
+      <tr>
+        <th>Status</th>
+        <th>Component</th>
+        <th>URL</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for assoc in associations %}
+      {% set comp = assoc.component %}
+      {% set comp_url = assoc.component_url %}
+      {% set full_url = (server_url + '/' + comp_url) if comp_url else '' %}
+      <tr>
+        <td style="width:1%;white-space:nowrap">
+          <span id="status-{{ loop.index0 }}" class="badge idle">?</span>
+        </td>
+        <td>{{ comp }}</td>
+        <td>
+          {% if full_url %}
+            <code style="font-size:0.8em">{{ full_url }}</code>
+          {% else %}
+            <span class="not-configured">not configured</span>
+          {% endif %}
+        </td>
+        <td style="width:1%;white-space:nowrap">
+          <button
+            class="ping-btn outline"
+            style="padding:0.15em 0.6em;font-size:0.85em"
+            data-index="{{ loop.index0 }}"
+            hx-get="/ui/fragments/ping/{{ assoc.component_encoded }}"
+            hx-target="#status-{{ loop.index0 }}"
+            hx-swap="innerHTML"
+            {% if not full_url %}disabled{% endif %}
+          >Ping</button>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</figure>
 
 {% endif %}
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function pingAll() {
+  document.querySelectorAll('.ping-btn:not([disabled])').forEach(function(btn) {
+    htmx.trigger(btn, 'click');
+  });
+}
+</script>
 {% endblock %}

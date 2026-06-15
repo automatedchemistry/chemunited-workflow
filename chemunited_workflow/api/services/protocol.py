@@ -194,6 +194,28 @@ class ProtocolService:
                 continue
         return results
 
+    def _ping_url(self, component: str, url: str, timeout: float) -> dict[str, Any]:
+        entry: dict[str, Any] = {
+            "component": component,
+            "url": url,
+            "online": False,
+            "status_code": None,
+            "latency_ms": None,
+            "error": None,
+        }
+        try:
+            response = _requests.get(url, timeout=timeout)
+            entry["online"] = True
+            entry["status_code"] = response.status_code
+            entry["latency_ms"] = round(response.elapsed.total_seconds() * 1000)
+        except _requests.exceptions.ConnectionError as exc:
+            entry["error"] = f"ConnectionError: {exc}"
+        except _requests.exceptions.Timeout:
+            entry["error"] = f"Timeout after {timeout}s"
+        except _requests.exceptions.RequestException as exc:
+            entry["error"] = str(exc)
+        return entry
+
     def ping_components(self, timeout: float = 2.0) -> list[dict[str, Any]]:
         connectivity = self.read_components()
         server_url = connectivity["server_url"].rstrip("/")
@@ -203,27 +225,29 @@ class ProtocolService:
             if not component_url:
                 continue
             full_url = f"{server_url}/{component_url}"
-            entry: dict[str, Any] = {
-                "component": assoc["component"],
-                "url": full_url,
-                "online": False,
-                "status_code": None,
-                "latency_ms": None,
-                "error": None,
-            }
-            try:
-                response = _requests.get(full_url, timeout=timeout)
-                entry["online"] = True
-                entry["status_code"] = response.status_code
-                entry["latency_ms"] = round(response.elapsed.total_seconds() * 1000)
-            except _requests.exceptions.ConnectionError as exc:
-                entry["error"] = f"ConnectionError: {exc}"
-            except _requests.exceptions.Timeout:
-                entry["error"] = f"Timeout after {timeout}s"
-            except _requests.exceptions.RequestException as exc:
-                entry["error"] = str(exc)
-            results.append(entry)
+            results.append(self._ping_url(assoc["component"], full_url, timeout))
         return results
+
+    def ping_component(
+        self, component_name: str, timeout: float = 2.0
+    ) -> dict[str, Any]:
+        connectivity = self.read_components()
+        server_url = connectivity["server_url"].rstrip("/")
+        for assoc in connectivity["associations"]:
+            if assoc["component"] == component_name:
+                component_url = assoc.get("component_url", "").strip()
+                if not component_url:
+                    return {
+                        "component": component_name,
+                        "url": "",
+                        "online": False,
+                        "status_code": None,
+                        "latency_ms": None,
+                        "error": "not configured",
+                    }
+                full_url = f"{server_url}/{component_url}"
+                return self._ping_url(component_name, full_url, timeout)
+        raise KeyError(f"Component '{component_name}' not found in associations.")
 
     def read_log(self, filename: str, tail: int | None = None) -> str:
         log_dir = self._log_dir.resolve()
