@@ -10,26 +10,29 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse, Response
 from fastapi.templating import Jinja2Templates
 
+from typing import Any
+
 from ..dependencies import get_project_holder, get_templates
 from ..project_holder import ProjectHolder
-from ..schemas import SnapshotMeta, LogMeta
 
 router = APIRouter(include_in_schema=False)
 
 
 # ── Page helpers ──────────────────────────────────────────────────────────────
 
-def _safe_list_snapshots(holder: ProjectHolder) -> list[SnapshotMeta]:
+
+def _safe_list_snapshots(holder: ProjectHolder) -> list[dict[str, Any]]:
     svc = holder.protocol_service
     return svc.list_snapshots() if svc else []
 
 
-def _safe_list_logs(holder: ProjectHolder) -> list[LogMeta]:
+def _safe_list_logs(holder: ProjectHolder) -> list[dict[str, Any]]:
     svc = holder.protocol_service
     return svc.list_logs() if svc else []
 
 
 # ── Pages ─────────────────────────────────────────────────────────────────────
+
 
 @router.get("/")
 async def dashboard(
@@ -159,6 +162,7 @@ async def devices(
 
 # ── HTMX fragments ────────────────────────────────────────────────────────────
 
+
 @router.get("/ui/fragments/active-run")
 async def fragment_active_run(
     holder: ProjectHolder = Depends(get_project_holder),
@@ -187,6 +191,7 @@ async def fragment_log(
     except FileNotFoundError:
         raise HTTPException(status_code=404, detail=f"Log '{filename}' not found.")
     from markupsafe import escape
+
     return HTMLResponse(content=str(escape(content)))
 
 
@@ -220,14 +225,13 @@ async def fragment_ping(
     table = (
         "<table><thead><tr>"
         "<th>Component</th><th>URL</th><th>Status</th><th>Error</th>"
-        "</tr></thead><tbody>"
-        + "".join(rows)
-        + "</tbody></table>"
+        "</tr></thead><tbody>" + "".join(rows) + "</tbody></table>"
     )
     return HTMLResponse(content=table)
 
 
 # ── Project-specific static assets ────────────────────────────────────────────
+
 
 @router.get("/project-static/{filename}")
 async def project_static(
@@ -238,7 +242,9 @@ async def project_static(
         raise HTTPException(status_code=404, detail="No project loaded.")
     file_path: Path = holder.project_dir / "ui" / "static" / filename
     if not file_path.is_file():
-        raise HTTPException(status_code=404, detail=f"Static file '{filename}' not found.")
+        raise HTTPException(
+            status_code=404, detail=f"Static file '{filename}' not found."
+        )
     mime, _ = mimetypes.guess_type(filename)
     return Response(
         content=file_path.read_bytes(),

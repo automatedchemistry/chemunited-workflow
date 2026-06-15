@@ -208,9 +208,7 @@ def scaffold_ui(project_dir: Path, force: bool) -> None:
     click.echo(f"Scaffolded UI into {project_dir / 'ui'}/")
     for p in created:
         click.echo(f"  created: {p.relative_to(project_dir)}")
-    click.echo(
-        "\nEdit the templates in ui/templates/ to customise your experiment UI."
-    )
+    click.echo("\nEdit the templates in ui/templates/ to customise your experiment UI.")
 
 
 if __name__ == "__main__":
