@@ -1,5 +1,7 @@
 """Routes: GET /components."""
 
+import asyncio
+
 from fastapi import APIRouter, Depends
 
 from ..dependencies import get_protocol_service
@@ -15,7 +17,7 @@ async def ping_components(
     svc: ProtocolService = Depends(get_protocol_service),
 ):
     """Verify that all device URLs in ``associations.json`` are reachable."""
-    return svc.ping_components(timeout=timeout)
+    return await asyncio.to_thread(svc.ping_components, timeout)
 
 
 @router.get("/")

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from fastapi import Depends, HTTPException
+from fastapi.templating import Jinja2Templates
 
 from .project_holder import ProjectHolder
 from .services.protocol import ProtocolService
@@ -33,3 +34,9 @@ def get_runner_service(
     if svc is None:
         raise HTTPException(status_code=503, detail=_NO_PROJECT_MSG)
     return svc
+
+
+def get_templates(
+    holder: ProjectHolder = Depends(get_project_holder),
+) -> Jinja2Templates:
+    return holder.jinja2_templates

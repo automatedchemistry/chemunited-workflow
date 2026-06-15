@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block title %}Snapshots — ChemUnited{% endblock %}
+
+{% block content %}
+<h1>Snapshots</h1>
+
+{% if not project_loaded %}
+<article>No project loaded. <a href="/">Return to Dashboard</a>.</article>
+{% elif not snapshots %}
+<p>No snapshots found in this project.</p>
+{% else %}
+<figure>
+  <table>
+    <thead>
+      <tr>
+        <th>Filename</th>
+        <th>Modified</th>
+        <th>Size</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody id="snapshots-table-body">
+      {% for s in snapshots %}
+      <tr id="snap-row-{{ loop.index }}">
+        <td>{{ s.filename }}</td>
+        <td>{{ s.modified }}</td>
+        <td>{{ s.size_bytes }} B</td>
+        <td>
+          <a href="/run-control?snapshot={{ s.filename }}" role="button" class="outline" style="padding:0.2em 0.6em;margin-right:0.3em">Run</a>
+          <button
+            class="secondary"
+            style="padding:0.2em 0.6em"
+            hx-delete="/snapshots/{{ s.filename }}"
+            hx-confirm="Delete snapshot '{{ s.filename }}'?"
+            hx-target="#snap-row-{{ loop.index }}"
+            hx-swap="outerHTML"
+          >Delete</button>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</figure>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,61 @@
+/* ChemUnited built-in UI overrides (applied on top of Pico CSS) */
+
+:root {
+  --badge-running-bg: #2ecc71;
+  --badge-finished-bg: #3498db;
+  --badge-failed-bg: #e74c3c;
+  --badge-cancelled-bg: #95a5a6;
+  --badge-idle-bg: #bdc3c7;
+}
+
+nav {
+  border-bottom: 1px solid var(--pico-muted-border-color);
+  margin-bottom: 1rem;
+}
+
+.badge {
+  display: inline-block;
+  padding: 0.2em 0.6em;
+  border-radius: 0.3em;
+  font-size: 0.85em;
+  font-weight: 600;
+  color: #fff;
+}
+
+.badge.running   { background: var(--badge-running-bg); }
+.badge.finished  { background: var(--badge-finished-bg); }
+.badge.failed    { background: var(--badge-failed-bg); }
+.badge.cancelled { background: var(--badge-cancelled-bg); }
+.badge.idle      { background: var(--badge-idle-bg); color: #555; }
+
+#event-feed-wrapper {
+  max-height: 380px;
+  overflow-y: auto;
+  border: 1px solid var(--pico-muted-border-color);
+  border-radius: var(--pico-border-radius);
+}
+
+#event-feed {
+  font-size: 0.82em;
+  margin-bottom: 0;
+}
+
+#event-feed thead th {
+  position: sticky;
+  top: 0;
+  background: var(--pico-background-color);
+}
+
+pre#log-content {
+  max-height: 520px;
+  overflow-y: auto;
+  font-size: 0.8em;
+  background: var(--pico-code-background-color);
+  padding: 1rem;
+  border-radius: var(--pico-border-radius);
+}
+
+.not-configured {
+  color: var(--pico-del-color);
+  font-style: italic;
+}

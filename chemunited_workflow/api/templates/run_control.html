@@ -1,0 +1,199 @@
+{% extends "base.html" %}
+{% block title %}Run Control — ChemUnited{% endblock %}
+
+{% block content %}
+<h1>Run Control</h1>
+
+{% if not project_loaded %}
+<article>No project loaded. <a href="/">Return to Dashboard</a>.</article>
+{% else %}
+
+<div class="grid">
+  <section>
+    <h2>Start a Run</h2>
+    <label for="snapshot-select">Snapshot</label>
+    <select id="snapshot-select">
+      <option value="" disabled {% if not preselect %}selected{% endif %}>— select a snapshot —</option>
+      {% for s in snapshots %}
+        <option value="{{ s.filename }}" {% if s.filename == preselect %}selected{% endif %}>{{ s.filename }}</option>
+      {% endfor %}
+    </select>
+
+    <label>
+      <input type="checkbox" id="dry-run-check" {% if snapshots|length == 0 %}disabled{% endif %}>
+      Dry run (no device calls)
+    </label>
+
+    <div style="display:flex;gap:0.5rem;margin-top:1rem">
+      <button id="start-btn" {% if not snapshots %}disabled{% endif %}>Start</button>
+      <button id="cancel-btn" class="secondary" style="display:none">Cancel</button>
+      <a id="report-link" href="#" role="button" class="outline" style="display:none">View Report</a>
+    </div>
+  </section>
+
+  <section>
+    <h2>Run State</h2>
+    <p>State: <span id="state-badge" class="badge idle">idle</span></p>
+    <p id="run-id-display" style="font-size:0.8em;color:var(--pico-muted-color)"></p>
+  </section>
+</div>
+
+{% block run_control_extra %}{% endblock %}
+
+<h2>Event Feed</h2>
+<div id="event-feed-wrapper">
+  <table id="event-feed">
+    <thead>
+      <tr>
+        <th>Process</th>
+        <th>Node</th>
+        <th>Event</th>
+        <th>State</th>
+        <th>Time</th>
+      </tr>
+    </thead>
+    <tbody id="event-feed-body"></tbody>
+  </table>
+</div>
+
+{% endif %}
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function () {
+  let currentRunId = null;
+  let eventSource = null;
+
+  const startBtn    = document.getElementById('start-btn');
+  const cancelBtn   = document.getElementById('cancel-btn');
+  const reportLink  = document.getElementById('report-link');
+  const stateBadge  = document.getElementById('state-badge');
+  const runIdDisplay = document.getElementById('run-id-display');
+  const feedBody    = document.getElementById('event-feed-body');
+
+  if (!startBtn) return; // no project loaded
+
+  function setBadge(state) {
+    stateBadge.textContent = state;
+    stateBadge.className = 'badge ' + state;
+  }
+
+  function appendEvent(data) {
+    const tr = document.createElement('tr');
+    const nodeKey = data.node_key ? data.node_key[0] + ':' + data.node_key[1] : '';
+    const ts = data.timestamp
+      ? new Date(data.timestamp * 1000).toLocaleTimeString()
+      : '';
+    tr.innerHTML =
+      '<td>' + (data.process || '') + '</td>' +
+      '<td>' + nodeKey + '</td>' +
+      '<td>' + (data.event_type || '') + '</td>' +
+      '<td>' + (data.state || '') + '</td>' +
+      '<td>' + ts + '</td>';
+    feedBody.appendChild(tr);
+    const wrapper = document.getElementById('event-feed-wrapper');
+    wrapper.scrollTop = wrapper.scrollHeight;
+  }
+
+  function openStream(runId) {
+    if (eventSource) eventSource.close();
+    eventSource = new EventSource('/run/' + runId + '/stream');
+
+    eventSource.onmessage = function (e) {
+      let data;
+      try { data = JSON.parse(e.data); } catch (_) { return; }
+
+      if (data.error) {
+        setBadge('failed');
+        finishRun();
+        return;
+      }
+      if ('event_type' in data) {
+        appendEvent(data);
+      } else if ('state' in data) {
+        setBadge(data.state);
+        finishRun(data.state);
+      }
+    };
+
+    eventSource.onerror = function () {
+      if (eventSource.readyState === EventSource.CLOSED) {
+        finishRun();
+      }
+    };
+  }
+
+  function finishRun(state) {
+    if (eventSource) { eventSource.close(); eventSource = null; }
+    startBtn.disabled = false;
+    cancelBtn.style.display = 'none';
+    if (currentRunId && state && (state === 'finished' || state === 'failed')) {
+      reportLink.href = '/report/' + currentRunId;
+      reportLink.style.display = 'inline-block';
+    }
+  }
+
+  startBtn.addEventListener('click', async function () {
+    const snapshot = document.getElementById('snapshot-select').value;
+    if (!snapshot) { alert('Please select a snapshot.'); return; }
+    const dryRun = document.getElementById('dry-run-check').checked;
+
+    startBtn.disabled = true;
+    cancelBtn.style.display = 'inline-block';
+    reportLink.style.display = 'none';
+    feedBody.innerHTML = '';
+    setBadge('running');
+
+    try {
+      const resp = await fetch('/run/', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ snapshot: snapshot, dry_run: dryRun })
+      });
+      if (!resp.ok) {
+        const err = await resp.json().catch(() => ({ detail: resp.statusText }));
+        alert('Failed to start run: ' + (err.detail || resp.statusText));
+        startBtn.disabled = false;
+        cancelBtn.style.display = 'none';
+        setBadge('idle');
+        return;
+      }
+      const data = await resp.json();
+      currentRunId = data.run_id;
+      runIdDisplay.textContent = 'run_id: ' + currentRunId;
+      cancelBtn.dataset.runId = currentRunId;
+      openStream(currentRunId);
+    } catch (err) {
+      alert('Network error: ' + err.message);
+      startBtn.disabled = false;
+      cancelBtn.style.display = 'none';
+      setBadge('idle');
+    }
+  });
+
+  cancelBtn.addEventListener('click', async function () {
+    const runId = currentRunId;
+    if (!runId) return;
+    cancelBtn.disabled = true;
+    try {
+      await fetch('/run/' + runId, { method: 'DELETE' });
+    } finally {
+      cancelBtn.disabled = false;
+    }
+  });
+
+  // Pre-select snapshot from query param
+  (function () {
+    const params = new URLSearchParams(window.location.search);
+    const snap = params.get('snapshot');
+    if (snap) {
+      const sel = document.getElementById('snapshot-select');
+      for (let i = 0; i < sel.options.length; i++) {
+        if (sel.options[i].value === snap) { sel.selectedIndex = i; break; }
+      }
+    }
+  })();
+})();
+</script>
+{% endblock %}

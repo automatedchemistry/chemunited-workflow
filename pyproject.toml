@@ -23,6 +23,8 @@ dependencies = [
     "uvicorn>=0.29",
     "pystray>=0.19",
     "pillow>=10",
+    "jinja2>=3.1",
+    "python-multipart>=0.0.9",
 ]
 
 [project.optional-dependencies]
@@ -36,6 +38,9 @@ test = [
 [project.scripts]
 chemunited-workflow = "chemunited_workflow.cli:main"
 chemunited-workflow-tray = "chemunited_workflow.tray_launcher:main"
+
+[tool.setuptools.package-data]
+"chemunited_workflow.api" = ["templates/*.html", "static/*"]
 
 [tool.setuptools]
 packages = [

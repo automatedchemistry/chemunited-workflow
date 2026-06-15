@@ -15,6 +15,8 @@ A NetworkX-based workflow execution engine for conditional automation of chemist
 - **Physical unit handling** (volumes, temperatures, concentrations) using Pint
 - **Multiple deployment modes**: FastAPI REST API, MCP server, or direct Python execution
 - **Protocol versioning** with snapshot persistence and schema validation
+- **Browser-based HTML dashboard** with live run monitoring, log viewer, and device status — served directly from the FastAPI app, no build step required
+- **Customisable per-project UI** — drop templates into `ui/templates/` to override pages for your experiment
 
 ## Requirements
 
@@ -114,8 +116,11 @@ my_project/
 ├── connectivity/
 │   └── associations.json        # Device URL mapping
 ├── protocols_hystoric/          # Versioned protocol snapshots
-└── log/                         # Execution logs
-    └── archive/                 # Archived logs (populated by archive_log)
+├── log/                         # Execution logs
+│   └── archive/                 # Archived logs (populated by archive_log)
+└── ui/                          # Optional — custom UI templates (see Customising the UI)
+    ├── templates/
+    └── static/
 ```
 
 `protocols/__init__.py` must export:
@@ -135,14 +140,16 @@ The FastAPI server is project-agnostic. You can start it without a project and l
 
 ```bash
 # Start without a project — load one via PUT /project after startup
-chemunited-workflow --fastapi --port 3116
+chemunited-workflow serve --port 3116
 
 # Start with a project pre-loaded (shortcut)
-chemunited-workflow my_project --fastapi --port 3116
+chemunited-workflow serve my_project --port 3116
 
 # Development with auto-reload
-chemunited-workflow --fastapi --reload
+chemunited-workflow serve --reload
 ```
+
+Once running, open `http://127.0.0.1:3116/` in a browser to see the HTML dashboard. The Swagger UI is still available at `/docs`.
 
 To load or switch projects at runtime:
 
@@ -156,16 +163,18 @@ curl -X PUT http://127.0.0.1:3116/project/ \
 
 You can switch to a different project at any time, as long as no run is currently active.
 
+> **CLI change (v0.0.1+):** The server is now a subcommand — use `chemunited-workflow serve [options]`. Running bare `chemunited-workflow` (no arguments) still starts the FastAPI server with default settings.
+
 ### MCP server
 
 The MCP server is project-agnostic. It starts without a project and the LLM loads one at runtime by calling the `load_project` tool.
 
 ```bash
 # MCP server over stdio — expose workflows as tools to Claude or other agents
-chemunited-workflow --mcp
+chemunited-workflow serve --mcp
 
 # MCP server over streamable HTTP, exposed at http://127.0.0.1:3117/mcp
-chemunited-workflow --mcp-http --port 3117
+chemunited-workflow serve --mcp-http --port 3117
 ```
 
 ### Windows tray launcher
@@ -185,7 +194,7 @@ chemunited-workflow-tray --silent
 ```
 
 By default, the launcher starts without a project loaded and opens
-`http://127.0.0.1:3116/docs` from the tray menu. To use a project or a different
+`http://127.0.0.1:3116/` (the HTML dashboard) from the tray menu. To use a project or a different
 port:
 
 ```powershell
@@ -202,14 +211,14 @@ If the silent launcher fails during startup, it writes details to
 
 The tray menu provides:
 
-- **Open App**: opens the FastAPI docs in the default browser.
+- **Open App**: opens the HTML dashboard (`/`) in the default browser.
 - **Status**: shows a notification that the server is running.
 - **Quit**: stops uvicorn and removes the tray icon.
 
 For development, the normal terminal CLI remains available:
 
 ```powershell
-chemunited-workflow examples/custom_project --fastapi --port 3116
+chemunited-workflow serve examples/custom_project --port 3116
 ```
 
 ### MCP stdio
@@ -223,7 +232,7 @@ communicates through the process stdin/stdout streams:
   "mcpServers": {
     "chemunited-workflow": {
       "command": "chemunited-workflow",
-      "args": ["--mcp"]
+      "args": ["serve", "--mcp"]
     }
   }
 }
@@ -237,7 +246,7 @@ environment's script:
   "mcpServers": {
     "chemunited-workflow": {
       "command": "/absolute/path/to/.venv/bin/chemunited-workflow",
-      "args": ["--mcp"]
+      "args": ["serve", "--mcp"]
     }
   }
 }
@@ -250,7 +259,7 @@ On Windows, assuming this repository is checked out at `D:\Projects\chemunited-w
   "mcpServers": {
     "chemunited-workflow": {
       "command": "D:\\Projects\\chemunited-workflow\\.venv\\Scripts\\chemunited-workflow.exe",
-      "args": ["--mcp"]
+      "args": ["serve", "--mcp"]
     }
   }
 }
@@ -262,7 +271,7 @@ Use streamable HTTP when your MCP client asks for a URL or when you want the
 server to run independently of the LLM client process:
 
 ```bash
-chemunited-workflow --mcp-http --host 127.0.0.1 --port 3117
+chemunited-workflow serve --mcp-http --host 127.0.0.1 --port 3117
 ```
 
 The MCP HTTP address is:
@@ -274,13 +283,13 @@ http://127.0.0.1:3117/mcp
 On Windows:
 
 ```bash
-.venv\Scripts\chemunited-workflow.exe --mcp-http --port 3117
+.venv\Scripts\chemunited-workflow.exe serve --mcp-http --port 3117
 ```
 
 Use `--mcp-path` to change the endpoint path:
 
 ```bash
-chemunited-workflow --mcp-http --port 3117 --mcp-path /chemunited-mcp
+chemunited-workflow serve --mcp-http --port 3117 --mcp-path /chemunited-mcp
 ```
 
 Then the address becomes `http://127.0.0.1:3117/chemunited-mcp`.
@@ -292,9 +301,53 @@ MCP HTTP is separate from the FastAPI REST API. FastAPI uses
 > **Note:** Once connected, ask the LLM to call `load_project` with the path to
 > your project directory. All other tools return an error until a project is loaded.
 
+## HTML UI
+
+When the FastAPI server is running, open `http://127.0.0.1:3116/` to access the browser-based dashboard. No separate server or build step is required — the templates are served directly from the FastAPI app using Jinja2 and [HTMX](https://htmx.org/).
+
+| Page | URL | Description |
+|------|-----|-------------|
+| Dashboard | `/` | Active run status, recent snapshots, quick-start links |
+| Run Control | `/run-control` | Start/cancel runs, live event feed via SSE |
+| Report | `/report/{run_id}` | Per-node outcome table for a finished run |
+| Snapshots | `/snapshots-ui` | List and delete protocol snapshots |
+| Logs | `/logs-ui` | Browse and tail log files |
+| Devices | `/devices` | Component connectivity map and ping check |
+
+### Customising the UI
+
+Each project can override any page with its own Jinja2 template. The server checks `{project_dir}/ui/templates/` first; if a template is not found there it falls back to the built-in templates.
+
+Use the `scaffold-ui` command to copy the built-in templates into your project as a starting point:
+
+```bash
+chemunited-workflow scaffold-ui --project-dir my_project/
+```
+
+This creates:
+
+```
+my_project/
+└── ui/
+    ├── templates/       # copies of all built-in .html files — edit freely
+    └── static/          # copy of built-in.css — add custom.css here
+```
+
+Re-run with `--force` to overwrite existing files.
+
+To add project-specific CSS, create `ui/static/custom.css` and reference it in your `base.html` override:
+
+```html
+{% block extra_css %}
+<link rel="stylesheet" href="/project-static/custom.css">
+{% endblock %}
+```
+
+The server serves files from `{project_dir}/ui/static/` at `/project-static/{filename}` automatically.
+
 ## API Overview
 
-When running in `--fastapi` mode the following endpoints are available.
+When running in FastAPI mode the following endpoints are available.
 
 All endpoints except `GET /project/` return HTTP `503` if no project has been loaded yet.
 
@@ -365,7 +418,7 @@ default `"10 s"`, or pass `""` to poll without a timeout.
 | `GET` | `/components/` | Return the full `associations.json` map |
 | `GET` | `/components/ping?timeout=2.0` | Check reachability of every device URL |
 
-Visit `/docs` for the interactive Swagger UI.
+Visit `/docs` for the interactive Swagger UI, or `/` for the HTML dashboard.
 
 ## MCP Tools
 

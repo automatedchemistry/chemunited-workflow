@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block title %}Devices — ChemUnited{% endblock %}
+
+{% block content %}
+<h1>Devices</h1>
+
+{% if not project_loaded %}
+<article>No project loaded. <a href="/">Return to Dashboard</a>.</article>
+{% else %}
+
+<section>
+  <h2>Configured Components</h2>
+  <figure>
+    <table>
+      <thead>
+        <tr><th>Component</th><th>URL</th></tr>
+      </thead>
+      <tbody>
+        {% for comp, url in associations.items() %}
+        <tr>
+          <td>{{ comp }}</td>
+          <td>
+            {% if url %}
+              <code>{{ url }}</code>
+            {% else %}
+              <span class="not-configured">not configured</span>
+              <span class="badge idle">unmapped</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </figure>
+</section>
+
+<section>
+  <h2>Connectivity Check</h2>
+  <button
+    hx-get="/ui/fragments/ping"
+    hx-target="#ping-results"
+    hx-swap="innerHTML"
+    hx-indicator="#ping-spinner"
+  >Ping All</button>
+  <span id="ping-spinner" aria-busy="true" style="display:none;margin-left:0.5rem"></span>
+  <div id="ping-results" style="margin-top:1rem"></div>
+</section>
+
+{% endif %}
+{% endblock %}

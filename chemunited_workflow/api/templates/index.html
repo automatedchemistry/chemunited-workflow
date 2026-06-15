@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+{% block title %}Dashboard — ChemUnited{% endblock %}
+
+{% block content %}
+<h1>Dashboard</h1>
+
+{% if not project_loaded %}
+<article>
+  <p>No project loaded. Start the server with a project directory:</p>
+  <pre>chemunited-workflow --project-dir /path/to/project</pre>
+  <p>or load one at runtime via <code>PUT /project</code>.</p>
+</article>
+{% endif %}
+
+<div class="grid">
+  <section>
+    <h2>Active Run</h2>
+    <div id="active-run-badge"
+         hx-get="/ui/fragments/active-run"
+         hx-trigger="every 5s"
+         hx-swap="innerHTML">
+      {% if active_run_id %}
+        <span class="badge running">Running: {{ active_run_id[:8] }}&hellip;
+          <a href="/run-control" style="color:inherit">[view]</a>
+        </span>
+      {% else %}
+        <span class="badge idle">No active run</span>
+      {% endif %}
+    </div>
+  </section>
+
+  <section>
+    <h2>Quick Start</h2>
+    {% if snapshots %}
+      <p>Select a snapshot and go to Run Control.</p>
+      <a href="/run-control" role="button">Open Run Control</a>
+    {% else %}
+      <p>No snapshots available yet.</p>
+    {% endif %}
+  </section>
+</div>
+
+<section>
+  <h2>Recent Snapshots</h2>
+  {% if snapshots %}
+  <figure>
+    <table>
+      <thead>
+        <tr><th>Filename</th><th>Modified</th><th>Size</th><th></th></tr>
+      </thead>
+      <tbody>
+        {% for s in snapshots %}
+        <tr>
+          <td>{{ s.filename }}</td>
+          <td>{{ s.modified }}</td>
+          <td>{{ s.size_bytes }} B</td>
+          <td><a href="/run-control?snapshot={{ s.filename }}" role="button" class="outline" style="padding:0.2em 0.6em">Run</a></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </figure>
+  {% else %}
+    <p>No snapshots found.</p>
+  {% endif %}
+</section>
+
+<section>
+  <h2>Recent Logs</h2>
+  {% if log_files %}
+  <ul>
+    {% for l in log_files %}
+      <li><a href="/logs-ui?file={{ l.filename }}">{{ l.filename }}</a>
+        <small>{{ l.modified }}</small>
+      </li>
+    {% endfor %}
+  </ul>
+  {% else %}
+    <p>No log files found.</p>
+  {% endif %}
+</section>
+{% endblock %}

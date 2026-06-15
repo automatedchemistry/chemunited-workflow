@@ -1,7 +1,9 @@
 """chemunited_workflow.api — FastAPI application factory."""
 
+from pathlib import Path
+
 from fastapi import FastAPI
-from fastapi.responses import RedirectResponse
+from fastapi.staticfiles import StaticFiles
 
 from .dependencies import get_project_holder
 from .project_holder import ProjectHolder
@@ -12,6 +14,9 @@ from .routers.project import router as project_router
 from .routers.runner import router as runner_router
 from .routers.snapshots import read_router as snapshots_read_router
 from .routers.snapshots import write_router as snapshots_write_router
+from .routers.ui import router as ui_router
+
+_STATIC_DIR = Path(__file__).parent / "static"
 
 
 def create_api() -> FastAPI:
@@ -24,12 +29,11 @@ def create_api() -> FastAPI:
 
     app = FastAPI(title="chemunited API")
 
-    @app.get("/", include_in_schema=False)
-    async def root():
-        return RedirectResponse(url="/docs")
+    app.mount("/static", StaticFiles(directory=_STATIC_DIR), name="static")
 
     app.dependency_overrides[get_project_holder] = lambda: holder
 
+    app.include_router(ui_router)
     app.include_router(project_router)
     app.include_router(processes_router)
     app.include_router(snapshots_read_router)

@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block title %}Report {{ run_id[:8] }} — ChemUnited{% endblock %}
+
+{% block content %}
+<h1>Run Report</h1>
+<p>
+  <strong>Run ID:</strong> <code>{{ run_id }}</code> &nbsp;
+  <span class="badge {{ state }}">{{ state }}</span>
+</p>
+<p><a href="/run-control">&larr; Back to Run Control</a></p>
+
+{% if not results %}
+  <p>No results recorded for this run.</p>
+{% else %}
+  {% for result in results %}
+  <article>
+    <header><strong>Process: {{ result.process or '(unnamed)' }}</strong></header>
+
+    {% block report_result_extra scoped %}{% endblock %}
+
+    <figure>
+      <table>
+        <thead>
+          <tr>
+            <th>Node (iteration)</th>
+            <th>State</th>
+            <th>Result</th>
+            <th>Duration (s)</th>
+            <th>Error</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for key, state_val in result.node_state.items() %}
+          {% set runtime = result.node_runtime.get(key, {}) %}
+          {% set started = runtime.get('started_at') %}
+          {% set finished = runtime.get('finished_at') %}
+          {% set duration = ((finished - started) | round(2)) if started and finished else '' %}
+          <tr>
+            <td>{{ key }}</td>
+            <td><span class="badge {% if 'COMPLETED' in state_val %}finished{% elif 'FAILED' in state_val %}failed{% elif 'INACTIVE' in state_val %}cancelled{% else %}idle{% endif %}">{{ state_val }}</span></td>
+            <td>{{ result.node_result.get(key, '') }}</td>
+            <td>{{ duration }}</td>
+            <td><small>{{ result.errors.get(key, '') }}</small></td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </figure>
+  </article>
+  {% endfor %}
+{% endif %}
+{% endblock %}

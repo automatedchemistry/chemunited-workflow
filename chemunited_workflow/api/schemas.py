@@ -2,7 +2,7 @@
 
 from typing import Any
 
-from pydantic import BaseModel, field_validator, Field
+from pydantic import BaseModel, field_validator, model_validator, Field
 
 from chemunited_workflow.durations import parse_timeout_commands
 
@@ -50,7 +50,6 @@ class RunRequest(BaseModel):
             "<value> <unit>, where unit can be 's' (seconds)."
         ),
     )
-
     error_resilient: bool = Field(
         default=False,
         title="Error-resilient execution",
@@ -68,6 +67,12 @@ class RunRequest(BaseModel):
     def validate_timeout_commands(cls, value: str) -> str:
         parse_timeout_commands(value)
         return value.strip()
+
+    @model_validator(mode="after")
+    def apply_dry_run_timeout(self) -> "RunRequest":
+        if self.dry_run and not self.timeout_commands:
+            self.timeout_commands = "1 s"
+        return self
 
 
 class RunStatus(BaseModel):

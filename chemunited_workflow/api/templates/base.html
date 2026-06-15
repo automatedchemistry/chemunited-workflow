@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}ChemUnited{% endblock %}</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
+  <link rel="stylesheet" href="/static/built-in.css">
+  <script src="https://unpkg.com/htmx.org@2.0.4" integrity="sha384-HGfztofotfshcF7+8n44JQL2oJmowVChPTg48S+jvZoztPfvwD79OC/LTtG6dMp+" crossorigin="anonymous"></script>
+  {% block extra_css %}{% endblock %}
+</head>
+<body>
+  <nav class="container-fluid">
+    <ul>
+      <li><strong><a href="/" class="contrast">ChemUnited</a></strong></li>
+    </ul>
+    <ul>
+      <li><a href="/">Dashboard</a></li>
+      <li><a href="/run-control">Run Control</a></li>
+      <li><a href="/snapshots-ui">Snapshots</a></li>
+      <li><a href="/logs-ui">Logs</a></li>
+      <li><a href="/devices">Devices</a></li>
+      {% block nav_extra %}{% endblock %}
+    </ul>
+  </nav>
+  <main class="container">
+    {% block content %}{% endblock %}
+  </main>
+  {% block extra_js %}{% endblock %}
+</body>
+</html>

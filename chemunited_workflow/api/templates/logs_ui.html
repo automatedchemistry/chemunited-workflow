@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block title %}Logs — ChemUnited{% endblock %}
+
+{% block content %}
+<h1>Logs</h1>
+
+{% if not project_loaded %}
+<article>No project loaded. <a href="/">Return to Dashboard</a>.</article>
+{% else %}
+<div class="grid">
+  <section style="max-width:280px">
+    <h2>Log Files</h2>
+    {% if log_files %}
+    <ul style="list-style:none;padding:0">
+      {% for l in log_files %}
+      <li style="margin-bottom:0.4rem">
+        <a href="#"
+           hx-get="/ui/fragments/log/{{ l.filename }}"
+           hx-target="#log-content"
+           hx-swap="innerHTML"
+           hx-push-url="false"
+           style="font-size:0.9em">{{ l.filename }}</a>
+        <br><small style="color:var(--pico-muted-color)">{{ l.modified }}</small>
+      </li>
+      {% endfor %}
+    </ul>
+    {% else %}
+      <p>No log files.</p>
+    {% endif %}
+  </section>
+
+  <section>
+    <h2>
+      Log Content
+      {% if selected_log %}
+        — <code>{{ selected_log }}</code>
+        {% if active_run_id %}
+          <small id="auto-refresh-label">(auto-refreshing)</small>
+        {% endif %}
+      {% endif %}
+    </h2>
+    <pre id="log-content"
+         {% if selected_log and active_run_id %}
+           hx-get="/ui/fragments/log/{{ selected_log }}"
+           hx-trigger="every 5s"
+           hx-swap="innerHTML"
+         {% endif %}>{{ log_content or 'Click a log file to view its contents.' }}</pre>
+  </section>
+</div>
+{% endif %}
+{% endblock %}
