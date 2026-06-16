@@ -67,7 +67,7 @@
     },
     {
       "component": "photo sensor",
-      "component_url": ""
+      "component_url": "sim-knauer-dad/channel1"
     },
     {
       "component": "bubble",
@@ -124,6 +124,14 @@
     {
       "component": "NMRPump",
       "component_url": "sim-azura-NMR/pump"
+    },
+    {
+      "component": "StirringControl",
+      "component_url": "sim-heidolph/stirring-control"
+    },
+    {
+      "component": "pt100",
+      "component_url": "sim-heidolph/temperature-control"
     }
   ]
 }

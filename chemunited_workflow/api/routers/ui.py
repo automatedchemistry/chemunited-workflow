@@ -174,6 +174,42 @@ async def devices(
 # ── HTMX fragments ────────────────────────────────────────────────────────────
 
 
+@router.get("/monitoring-ui")
+async def monitoring_ui(
+    request: Request,
+    holder: ProjectHolder = Depends(get_project_holder),
+    templates: Jinja2Templates = Depends(get_templates),
+) -> HTMLResponse:
+    svc = holder.protocol_service
+    monitoring_svc = holder.monitoring_service
+    associations: list[dict[str, Any]] = []
+    server_url = ""
+    config: dict[str, Any] = {
+        "sample_time": 5.0,
+        "request_timeout": 5.0,
+        "variables": [],
+    }
+    sessions: list[dict[str, Any]] = []
+    if svc:
+        connectivity = svc.read_components()
+        server_url = connectivity.get("server_url", "").rstrip("/")
+        associations = connectivity.get("associations", [])
+    if monitoring_svc:
+        config = monitoring_svc.read_config()
+        sessions = monitoring_svc.list_sessions()
+    return templates.TemplateResponse(
+        request,
+        "monitoring.html",
+        {
+            "project_loaded": holder.is_loaded(),
+            "associations": associations,
+            "server_url": server_url,
+            "monitoring_config": config,
+            "sessions": sessions,
+        },
+    )
+
+
 @router.get("/ui/fragments/active-run")
 async def fragment_active_run(
     holder: ProjectHolder = Depends(get_project_holder),

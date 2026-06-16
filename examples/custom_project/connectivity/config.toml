@@ -125,3 +125,6 @@ ip_address = "127.0.0.1"
 [device.sim-r2]
 type = "R2"
 
+[device.sim-heidolph]
+type = "HeiConnect"
+

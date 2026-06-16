@@ -9,6 +9,7 @@ from .dependencies import get_project_holder
 from .project_holder import ProjectHolder
 from .routers.components import router as components_router
 from .routers.logs import router as logs_router
+from .routers.monitoring import router as monitoring_router
 from .routers.processes import router as processes_router
 from .routers.project import router as project_router
 from .routers.runner import router as runner_router
@@ -41,5 +42,6 @@ def create_api() -> FastAPI:
     app.include_router(runner_router)
     app.include_router(components_router)
     app.include_router(logs_router)
+    app.include_router(monitoring_router)
 
     return app

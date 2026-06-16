@@ -24,6 +24,7 @@
       <nav class="sidebar-nav">
         <a href="/" class="nav-item" {% if current_path == "/" %}aria-current="page"{% endif %}>Dashboard</a>
         <a href="/run-control" class="nav-item" {% if current_path.startswith("/run-control") or current_path.startswith("/report") %}aria-current="page"{% endif %}>Run Control</a>
+        <a href="/monitoring-ui" class="nav-item" {% if current_path.startswith("/monitoring-ui") %}aria-current="page"{% endif %}>Monitoring</a>
         <a href="/snapshots-ui" class="nav-item" {% if current_path.startswith("/snapshots-ui") %}aria-current="page"{% endif %}>Snapshots</a>
         <a href="/logs-ui" class="nav-item" {% if current_path.startswith("/logs-ui") %}aria-current="page"{% endif %}>Logs</a>
         <a href="/devices" class="nav-item" {% if current_path.startswith("/devices") %}aria-current="page"{% endif %}>Devices</a>

@@ -113,3 +113,39 @@ class ProjectIn(BaseModel):
 
 class ProjectOut(BaseModel):
     project_dir: str | None = None
+
+
+class MonitoringVariableIn(BaseModel):
+    component: str = Field(
+        description="Component name, matching an entry in connectivity/associations.json."
+    )
+    command: str = Field(description="GET command/path to poll on the component.")
+    kwargs: dict[str, Any] = Field(
+        default_factory=dict,
+        description="Extra query parameters passed to the GET request.",
+    )
+
+
+class MonitoringConfigIn(BaseModel):
+    sample_time: float = Field(
+        gt=0,
+        description="Seconds between sampling ticks.",
+    )
+    request_timeout: float = Field(
+        default=5.0,
+        gt=0,
+        description="Per-request timeout in seconds. A hung device only delays its own reading.",
+    )
+    variables: list[MonitoringVariableIn] = Field(default_factory=list)
+
+
+class MonitoringSessionOut(BaseModel):
+    session_id: str
+    state: str
+
+
+class MonitoringReading(BaseModel):
+    tick: int
+    time: str
+    value: Any | None = None
+    error: str | None = None

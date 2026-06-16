@@ -6,6 +6,7 @@ from fastapi import Depends, HTTPException
 from fastapi.templating import Jinja2Templates
 
 from .project_holder import ProjectHolder
+from .services.monitoring import MonitoringService
 from .services.protocol import ProtocolService
 from .services.runner import RunnerService
 
@@ -31,6 +32,15 @@ def get_runner_service(
     holder: ProjectHolder = Depends(get_project_holder),
 ) -> RunnerService:
     svc = holder.runner_service
+    if svc is None:
+        raise HTTPException(status_code=503, detail=_NO_PROJECT_MSG)
+    return svc
+
+
+def get_monitoring_service(
+    holder: ProjectHolder = Depends(get_project_holder),
+) -> MonitoringService:
+    svc = holder.monitoring_service
     if svc is None:
         raise HTTPException(status_code=503, detail=_NO_PROJECT_MSG)
     return svc
