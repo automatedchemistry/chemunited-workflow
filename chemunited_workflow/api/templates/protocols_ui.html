@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+{% block title %}Protocols - ChemUnited{% endblock %}
+{% block page_label %}Protocols{% endblock %}
+
+{% block content %}
+<header class="page-header">
+  <div>
+    <span class="eyebrow">Protocol history</span>
+    <h1>Protocols</h1>
+    <p>Review saved protocols and launch a selected version from Run Control.</p>
+  </div>
+  <div class="page-actions">
+    <a href="/run-control" role="button" class="outline">Run Control</a>
+  </div>
+</header>
+
+{% if not project_loaded %}
+<section class="empty-state">
+  <h2>No project loaded</h2>
+  <p>Load a project to browse saved protocols. <a href="/">Return to Dashboard</a>.</p>
+</section>
+{% elif not protocols %}
+<section class="empty-state">
+  <h2>No protocols found</h2>
+  <p>This project does not have saved protocols yet.</p>
+</section>
+{% else %}
+<section class="panel table-panel">
+  <div class="table-header">
+    <div>
+      <h2>Saved Protocols</h2>
+      <span class="muted">{{ protocols|length }} protocol version(s)</span>
+    </div>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Filename</th>
+          <th>Modified</th>
+          <th>Size</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody id="protocols-table-body">
+        {% for s in protocols %}
+        <tr id="proto-row-{{ loop.index }}">
+          <td>{{ s.filename }}</td>
+          <td>{{ s.modified }}</td>
+          <td>{{ s.size_bytes }} B</td>
+          <td class="actions-cell">
+            <a href="/run-control?protocol={{ s.filename }}" role="button" class="outline compact-button">Run</a>
+            <button
+              class="secondary compact-button"
+              type="button"
+              hx-delete="/protocols/{{ s.filename }}"
+              hx-confirm="Delete protocol '{{ s.filename }}'?"
+              hx-target="#proto-row-{{ loop.index }}"
+              hx-swap="outerHTML"
+            >Delete</button>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endif %}
+{% endblock %}

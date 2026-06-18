@@ -48,7 +48,7 @@ def make_project_tree(tmp_path: Path) -> dict:
     created directories.
     """
     process_dir = tmp_path / "processes"
-    historic_dir = tmp_path / "protocols_hystoric"
+    historic_dir = tmp_path / "protocols_historic"
     connectivity_dir = tmp_path / "connectivity"
     log_dir = tmp_path / "log"
     protocols_dir = tmp_path / "protocols"

@@ -7,7 +7,7 @@
   <div>
     <span class="eyebrow">System overview</span>
     <h1>Control Dashboard</h1>
-    <p>Monitor active protocol execution, recent snapshots, logs, and readiness from one operator surface.</p>
+    <p>Monitor active protocol execution, recent protocols, logs, and readiness from one operator surface.</p>
   </div>
   <div class="page-actions">
     <a href="/run-control" role="button" class="primary-action">Open Run Control</a>
@@ -35,8 +35,8 @@
     </span>
   </div>
   <div class="metric-card">
-    <span class="metric-label">Recent snapshots</span>
-    <span class="metric-value">{{ snapshots|length }}</span>
+    <span class="metric-label">Recent protocols</span>
+    <span class="metric-value">{{ protocols|length }}</span>
     <span class="metric-detail">Latest saved protocol versions</span>
   </div>
   <div class="metric-card">
@@ -72,16 +72,16 @@
     <div class="panel-header">
       <div>
         <h2>Quick Start</h2>
-        <p>Use the latest snapshot or open the full control panel.</p>
+        <p>Use the latest protocol or open the full control panel.</p>
       </div>
     </div>
-    {% if snapshots %}
+    {% if protocols %}
       <div class="control-actions">
-        <a href="/run-control?snapshot={{ snapshots[0].filename }}" role="button" class="primary-action">Run Latest Snapshot</a>
-        <a href="/snapshots-ui" role="button" class="outline">Browse Snapshots</a>
+        <a href="/run-control?protocol={{ protocols[0].filename }}" role="button" class="primary-action">Run Latest Protocol</a>
+        <a href="/protocols-ui" role="button" class="outline">Browse Protocols</a>
       </div>
     {% else %}
-      <p class="muted">No snapshots are available yet.</p>
+      <p class="muted">No protocols are available yet.</p>
     {% endif %}
   </section>
 </div>
@@ -89,31 +89,31 @@
 <section class="panel table-panel spaced-top">
   <div class="table-header">
     <div>
-      <h2>Recent Snapshots</h2>
+      <h2>Recent Protocols</h2>
       <span class="muted">Latest protocol versions ready for execution</span>
     </div>
-    <a href="/snapshots-ui" class="utility-link">View all</a>
+    <a href="/protocols-ui" class="utility-link">View all</a>
   </div>
-  {% if snapshots %}
+  {% if protocols %}
   <div class="table-wrap">
     <table>
       <thead>
         <tr><th>Filename</th><th>Modified</th><th>Size</th><th></th></tr>
       </thead>
       <tbody>
-        {% for s in snapshots %}
+        {% for s in protocols %}
         <tr>
           <td>{{ s.filename }}</td>
           <td>{{ s.modified }}</td>
           <td>{{ s.size_bytes }} B</td>
-          <td class="actions-cell"><a href="/run-control?snapshot={{ s.filename }}" role="button" class="outline compact-button">Run</a></td>
+          <td class="actions-cell"><a href="/run-control?protocol={{ s.filename }}" role="button" class="outline compact-button">Run</a></td>
         </tr>
         {% endfor %}
       </tbody>
     </table>
   </div>
   {% else %}
-    <div class="table-empty">No snapshots found.</div>
+    <div class="table-empty">No protocols found.</div>
   {% endif %}
 </section>
 

@@ -4,10 +4,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from time import time
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Self
 
 import networkx as nx
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, model_validator
 
 from .enums import NodeState, WorkflowEventType
 
@@ -28,9 +28,15 @@ class WorkflowNodeSpec(BaseModel):
 
     node_id: str
     method: str
-    label: str | None = None
-    description: str | None = None
+    label: str = ""
+    description: str = ""
     position: tuple[float, float] | None = None
+
+    @model_validator(mode='after')
+    def ensure_not_empty_label(self) -> Self:
+        if not self.label:
+            self.label = self.node_id
+        return self
 
 
 class WorkflowEdgeSpec(BaseModel):

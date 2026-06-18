@@ -75,7 +75,7 @@ class Process(ABC, Generic[ConfigT]):
 
         **Phase 2 — historic JSON**
         Looks for *historic_file* (default: ``"parameters.json"``) in a
-        ``protocols_hystoric/`` directory one level above the process directory.
+        ``protocols_historic/`` directory one level above the process directory.
         If the file exists, it overrides both ``self.main_parameters`` and
         ``self.config`` with validated values from the JSON.
 
@@ -128,7 +128,7 @@ class Process(ABC, Generic[ConfigT]):
             historic_file if historic_file is not None else "parameters.json"
         )
         historic_file_path = (
-            process_dir.parent / "protocols_hystoric" / historic_filename
+            process_dir.parent / "protocols_historic" / historic_filename
         )
 
         if not historic_file_path.exists():

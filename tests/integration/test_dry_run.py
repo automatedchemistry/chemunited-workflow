@@ -131,14 +131,13 @@ def test_api_dry_run_run_completes(tmp_path):
         )
     )
     client = TestClient(app)
-    r = client.post("/run/", json={"snapshot": "run_001.json", "dry_run": True})
+    r = client.post("/run/", json={"protocol": "run_001.json", "dry_run": True})
     assert r.status_code == 202
-    run_id = r.json()["run_id"]
 
     deadline = time.time() + 5.0
     state = "running"
     while time.time() < deadline:
-        sr = client.get(f"/run/{run_id}/status")
+        sr = client.get("/run/status")
         state = sr.json()["state"]
         if state != "running":
             break

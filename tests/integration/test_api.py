@@ -142,27 +142,27 @@ def test_get_process_schema_known(client):
     assert "config_schema" in r.json()
 
 
-# ── /snapshots ────────────────────────────────────────────────────────────────
+# ── /protocols ────────────────────────────────────────────────────────────────
 
 
-def test_list_snapshots(client):
-    r = client.get("/snapshots/")
+def test_list_protocols(client):
+    r = client.get("/protocols/")
     assert r.status_code == 200
     assert isinstance(r.json(), list)
 
 
-def test_get_existing_snapshot(client):
-    r = client.get("/snapshots/run_001.json")
+def test_get_existing_protocol(client):
+    r = client.get("/protocols/run_001.json")
     assert r.status_code == 200
     assert "my_process_0" in r.json()
 
 
-def test_get_missing_snapshot(client):
-    r = client.get("/snapshots/missing.json")
+def test_get_missing_protocol(client):
+    r = client.get("/protocols/missing.json")
     assert r.status_code == 404
 
 
-def test_create_valid_snapshot(client):
+def test_create_valid_protocol(client):
     body = {
         "name": "test_run",
         "data": {
@@ -170,17 +170,17 @@ def test_create_valid_snapshot(client):
             "my_process_0": {"value": 1.0},
         },
     }
-    r = client.post("/snapshots/", json=body)
+    r = client.post("/protocols/", json=body)
     assert r.status_code == 201
     assert "filename" in r.json()
 
 
-def test_create_snapshot_bad_key(client):
+def test_create_protocol_bad_key(client):
     body = {
         "name": "bad",
         "data": {"bad_key_format": {}},
     }
-    r = client.post("/snapshots/", json=body)
+    r = client.post("/protocols/", json=body)
     assert r.status_code == 422
 
 
@@ -188,7 +188,7 @@ def test_create_snapshot_bad_key(client):
 
 
 def test_start_run_returns_run_id(client):
-    r = client.post("/run/", json={"snapshot": "run_001.json"})
+    r = client.post("/run/", json={"protocol": "run_001.json"})
     assert r.status_code == 202
     assert "run_id" in r.json()
 
@@ -196,7 +196,7 @@ def test_start_run_returns_run_id(client):
 def test_start_run_accepts_timeout_commands(client):
     r = client.post(
         "/run/",
-        json={"snapshot": "run_001.json", "timeout_commands": "5 s"},
+        json={"protocol": "run_001.json", "timeout_commands": "5 s"},
     )
     assert r.status_code == 202
     assert "run_id" in r.json()
@@ -205,19 +205,19 @@ def test_start_run_accepts_timeout_commands(client):
 def test_start_run_rejects_invalid_timeout_commands(client):
     r = client.post(
         "/run/",
-        json={"snapshot": "run_001.json", "timeout_commands": "5 ml"},
+        json={"protocol": "run_001.json", "timeout_commands": "5 ml"},
     )
     assert r.status_code == 422
 
 
 def test_poll_run_status(client):
-    r = client.post("/run/", json={"snapshot": "run_001.json"})
-    run_id = r.json()["run_id"]
+    r = client.post("/run/", json={"protocol": "run_001.json"})
+    assert r.status_code == 202
 
     deadline = time.time() + 5.0
     state = None
     while time.time() < deadline:
-        sr = client.get(f"/run/{run_id}/status")
+        sr = client.get("/run/status")
         assert sr.status_code == 200
         state = sr.json()["state"]
         if state in ("finished", "failed"):
@@ -227,21 +227,28 @@ def test_poll_run_status(client):
     assert state in ("finished", "failed", "running")
 
 
-def test_poll_unknown_run_status(client):
-    r = client.get("/run/no-such-id/status")
+def test_poll_status_when_no_run(client):
+    r = client.get("/run/status")
     assert r.status_code == 404
 
 
-def test_cancel_run(client):
-    r = client.post("/run/", json={"snapshot": "run_001.json"})
-    run_id = r.json()["run_id"]
-    cr = client.delete(f"/run/{run_id}")
+def test_cancel_active_run(client):
+    r = client.post("/run/", json={"protocol": "run_001.json"})
+    assert r.status_code == 202
+    cr = client.delete("/run/")
     assert cr.status_code in (204, 404)
 
 
-def test_cancel_unknown_run(client):
-    r = client.delete("/run/no-such-id")
+def test_cancel_when_no_run(client):
+    r = client.delete("/run/")
     assert r.status_code == 404
+
+
+def test_start_run_while_active_returns_409(client):
+    r1 = client.post("/run/", json={"protocol": "run_001.json"})
+    assert r1.status_code == 202
+    r2 = client.post("/run/", json={"protocol": "run_001.json"})
+    assert r2.status_code == 409
 
 
 def test_cancel_run_interrupts_client_wait(tmp_path):
@@ -298,28 +305,27 @@ def test_cancel_run_interrupts_client_wait(tmp_path):
 
     r = local_client.post(
         "/run/",
-        json={"snapshot": "slow_run.json", "dry_run": True},
+        json={"protocol": "slow_run.json", "dry_run": True},
     )
     assert r.status_code == 202
-    run_id = r.json()["run_id"]
 
     deadline = time.monotonic() + 2.0
     status = None
     while time.monotonic() < deadline:
-        status = local_client.get(f"/run/{run_id}/status").json()
+        status = local_client.get("/run/status").json()
         if wait_marker.exists():
             break
         time.sleep(0.05)
     assert wait_marker.exists(), status
 
     started = time.monotonic()
-    cr = local_client.delete(f"/run/{run_id}")
+    cr = local_client.delete("/run/")
     assert cr.status_code == 204
 
     report = None
     deadline = time.monotonic() + 2.0
     while time.monotonic() < deadline:
-        rr = local_client.get(f"/run/{run_id}/report")
+        rr = local_client.get("/run/report")
         assert rr.status_code == 200
         report = rr.json()
         if report["results"]:
@@ -447,17 +453,17 @@ def test_get_process_source_path_traversal(client):
     assert r.status_code in (400, 404)
 
 
-# ── /snapshots DELETE (refactored) ────────────────────────────────────────────
+# ── /protocols DELETE ────────────────────────────────────────────────────────
 
 
-def test_delete_existing_snapshot(client, project):
-    r = client.delete("/snapshots/run_001.json")
+def test_delete_existing_protocol(client, project):
+    r = client.delete("/protocols/run_001.json")
     assert r.status_code == 204
     assert not (project["dirs"]["historic_dir"] / "run_001.json").exists()
 
 
-def test_delete_missing_snapshot(client):
-    r = client.delete("/snapshots/missing.json")
+def test_delete_missing_protocol(client):
+    r = client.delete("/protocols/missing.json")
     assert r.status_code == 404
 
 

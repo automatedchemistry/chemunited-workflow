@@ -22,9 +22,9 @@ router = APIRouter(include_in_schema=False)
 # ── Page helpers ──────────────────────────────────────────────────────────────
 
 
-def _safe_list_snapshots(holder: ProjectHolder) -> list[dict[str, Any]]:
+def _safe_list_protocols(holder: ProjectHolder) -> list[dict[str, Any]]:
     svc = holder.protocol_service
-    return svc.list_snapshots() if svc else []
+    return svc.list_protocols() if svc else []
 
 
 def _safe_list_logs(holder: ProjectHolder) -> list[dict[str, Any]]:
@@ -41,7 +41,7 @@ async def dashboard(
     holder: ProjectHolder = Depends(get_project_holder),
     templates: Jinja2Templates = Depends(get_templates),
 ) -> HTMLResponse:
-    snapshots = _safe_list_snapshots(holder)
+    protocols = _safe_list_protocols(holder)
     log_files = _safe_list_logs(holder)
     return templates.TemplateResponse(
         request,
@@ -49,7 +49,7 @@ async def dashboard(
         {
             "project_loaded": holder.is_loaded(),
             "active_run_id": holder.active_run_id(),
-            "snapshots": snapshots[-5:][::-1],
+            "protocols": protocols[-5:][::-1],
             "log_files": log_files[-3:][::-1],
         },
     )
@@ -58,58 +58,57 @@ async def dashboard(
 @router.get("/run-control")
 async def run_control(
     request: Request,
-    snapshot: str = "",
+    protocol: str = "",
     holder: ProjectHolder = Depends(get_project_holder),
     templates: Jinja2Templates = Depends(get_templates),
 ) -> HTMLResponse:
-    snapshots = _safe_list_snapshots(holder)
+    protocols = _safe_list_protocols(holder)
     return templates.TemplateResponse(
         request,
         "run_control.html",
         {
             "project_loaded": holder.is_loaded(),
-            "snapshots": snapshots,
-            "preselect": snapshot,
+            "protocols": protocols,
+            "preselect": protocol,
         },
     )
 
 
-@router.get("/report/{run_id}")
+@router.get("/report")
 async def report(
-    run_id: str,
     request: Request,
     holder: ProjectHolder = Depends(get_project_holder),
     templates: Jinja2Templates = Depends(get_templates),
 ) -> HTMLResponse:
     store = holder.run_store
-    rec = store.get(run_id)
+    rec = store.get()
     if rec is None:
-        raise HTTPException(status_code=404, detail=f"Run '{run_id}' not found.")
+        raise HTTPException(status_code=404, detail="No run recorded.")
     results = [r.model_dump() for r in rec.results]
     return templates.TemplateResponse(
         request,
         "report.html",
         {
-            "run_id": run_id,
+            "run_id": rec.run_id,
             "state": rec.state.value,
             "results": results,
         },
     )
 
 
-@router.get("/snapshots-ui")
-async def snapshots_ui(
+@router.get("/protocols-ui")
+async def protocols_ui(
     request: Request,
     holder: ProjectHolder = Depends(get_project_holder),
     templates: Jinja2Templates = Depends(get_templates),
 ) -> HTMLResponse:
-    snapshots = _safe_list_snapshots(holder)
+    protocols = _safe_list_protocols(holder)
     return templates.TemplateResponse(
         request,
-        "snapshots_ui.html",
+        "protocols_ui.html",
         {
             "project_loaded": holder.is_loaded(),
-            "snapshots": snapshots,
+            "protocols": protocols,
         },
     )
 

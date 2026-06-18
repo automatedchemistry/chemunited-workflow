@@ -1,4 +1,4 @@
-"""RunnerService — parses snapshots and drives workflow execution."""
+"""RunnerService — parses protocols and drives workflow execution."""
 
 from __future__ import annotations
 
@@ -33,13 +33,13 @@ class RunnerService:
 
     def start(
         self,
-        snapshot_filename: str,
+        protocol_filename: str,
         *,
         dry_run: bool = False,
         timeout_commands: str = "10 s",
         error_resilient: bool = False,
-    ) -> str:
-        """Launch execution in a background thread. Returns run_id immediately.
+    ) -> str | None:
+        """Launch execution in a background thread. Returns run_id, or None if busy.
 
         Parameters
         ----------
@@ -51,15 +51,16 @@ class RunnerService:
             the timeout.
         """
         parse_timeout_commands(timeout_commands)
-        snapshot_path = self._project_dir / "protocols_hystoric" / snapshot_filename
-        data = json.loads(snapshot_path.read_text(encoding="utf-8"))
+        protocol_path = self._project_dir / "protocols_historic" / protocol_filename
+        data = json.loads(protocol_path.read_text(encoding="utf-8"))
         sequence = self._parse_sequence(data)
-        run_id = self._run_store.create()
+        run_id = self._run_store.try_start(protocol_filename)
+        if run_id is None:
+            return None
         thread = threading.Thread(
             target=self._execute,
             args=(
-                run_id,
-                snapshot_filename,
+                protocol_filename,
                 sequence,
                 data,
                 dry_run,
@@ -73,15 +74,14 @@ class RunnerService:
 
     def _execute(
         self,
-        run_id: str,
-        snapshot_filename: str,
+        protocol_filename: str,
         sequence: list[tuple[str, int]],
         data: dict,
         dry_run: bool,
         timeout_commands: str,
         error_resilient: bool,
     ) -> None:
-        log_path = create_run_log_path(self._project_dir, snapshot_filename)
+        log_path = create_run_log_path(self._project_dir, protocol_filename)
         log_path.parent.mkdir(parents=True, exist_ok=True)
         sink_id = logger.add(
             log_path,
@@ -95,7 +95,7 @@ class RunnerService:
             if pool_dir.exists():
                 for f in pool_dir.glob("*.jsonl"):
                     f.unlink(missing_ok=True)
-            cancellation_token = self._run_store.cancel_event(run_id)
+            cancellation_token = self._run_store.cancel_event()
             platform = Platform.from_project_dir(
                 self._project_dir,
                 dry_run=dry_run,
@@ -105,7 +105,7 @@ class RunnerService:
                 cancellation_token=cancellation_token,
             )
             for process_name, process_index in sequence:
-                record = self._run_store.get(run_id)
+                record = self._run_store.get()
                 if record is not None and record.state == RunState.CANCELLED:
                     return
                 config_data = data.get(f"{process_name}_{process_index}", {})
@@ -115,14 +115,14 @@ class RunnerService:
                     platform=platform,
                     process_index=process_index,
                 )
-                process.load_parameters(snapshot_filename)
+                process.load_parameters(protocol_filename)
                 compiled = compile_workflow(process.build_workflow())
                 wf_logger = WorkflowLogger(process_name, process_index)
                 executor = WorkflowExecutor(
                     compiled,
                     max_workers=4,
                     event_listeners=[
-                        lambda e: self._run_store.append_event(run_id, e),
+                        lambda e: self._run_store.append_event(e),
                         wf_logger.handle_event,
                     ],
                     error_resilient=error_resilient,
@@ -134,21 +134,21 @@ class RunnerService:
                     ),
                 )
                 result = executor.execute(process, start_node="start")
-                self._run_store.append_result(run_id, result)
+                self._run_store.append_result(result)
                 if not error_resilient and result.errors:
                     raise RuntimeError(
                         f"Process '{process_name}' step {process_index} failed with "
                         f"{len(result.errors)} node error(s)."
                     )
-            self._run_store.set_state(run_id, success=True)
+            self._run_store.set_state(success=True)
         except Exception:
-            self._run_store.set_state(run_id, success=False)
+            self._run_store.set_state(success=False)
         finally:
             logger.remove(sink_id)
 
     @staticmethod
     def _parse_sequence(data: dict) -> list[tuple[str, int]]:
-        """Extract the ordered (process_name, index) list from snapshot key order."""
+        """Extract the ordered (process_name, index) list from protocol key order."""
         sequence = []
         for key in data:
             if key == "main_parameter":

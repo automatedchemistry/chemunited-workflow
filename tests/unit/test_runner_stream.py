@@ -15,17 +15,17 @@ from chemunited_workflow.api.services.runner import RunnerService
 def test_run_stream_sends_heartbeat_until_finished():
     async def collect_chunks() -> tuple[str, str]:
         store = RunStore()
-        run_id = store.create()
+        run_id = store.try_start("p_2026-01-01T00-00-00.json")
+        assert run_id is not None
         svc = RunnerService(Path(), {}, {}, store)
         stream = _generate_run_stream(
             svc,
-            run_id,
             poll_interval=0.0,
             heartbeat_interval=0.0,
         )
 
         heartbeat = await anext(stream)
-        store.set_state(run_id, success=True)
+        store.set_state(success=True)
         terminal = await anext(stream)
         with pytest.raises(StopAsyncIteration):
             await anext(stream)

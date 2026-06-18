@@ -87,26 +87,26 @@ def register_tools(mcp: FastMCP, holder: ProjectHolder) -> None:
             return {"error": _NO_PROJECT}
         return _protocol(holder).get_process_schema(name)
 
-    # ── Snapshots ─────────────────────────────────────────────────────────────
+    # ── Protocols ─────────────────────────────────────────────────────────────
 
     @mcp.tool()
-    def list_snapshots() -> list[dict]:
-        """List all protocol snapshots in protocols_hystoric/, most recent first."""
+    def list_protocols() -> list[dict]:
+        """List all protocols in protocols_historic/, most recent first."""
         if not holder.is_loaded():
             return [{"error": _NO_PROJECT}]
-        return _protocol(holder).list_snapshots()
+        return _protocol(holder).list_protocols()
 
     @mcp.tool()
-    def get_snapshot(filename: str) -> dict:
-        """Read the full contents of a specific snapshot JSON file."""
+    def get_protocol(filename: str) -> dict:
+        """Read the full contents of a specific protocol JSON file."""
         if not holder.is_loaded():
             return {"error": _NO_PROJECT}
-        return _protocol(holder).read_snapshot(filename)
+        return _protocol(holder).read_protocol(filename)
 
     @mcp.tool()
-    def create_snapshot(name: str, data: dict) -> dict:
-        """Validate and save a new protocol snapshot. Each call always creates a
-        new versioned file — snapshots are immutable once written.
+    def create_protocol(name: str, data: dict) -> dict:
+        """Validate and save a new protocol file. Each call always creates a
+        new versioned file — protocols are immutable once written.
 
         Parameters
         ----------
@@ -114,24 +114,24 @@ def register_tools(mcp: FastMCP, holder: ProjectHolder) -> None:
             Short name, e.g. ``"suzuki_batch_14"``. The saved filename will be
             ``{name}_{timestamp}.json``.
         data:
-            Full snapshot dict. Must contain ``"main_parameter"`` and one key per
+            Full protocol dict. Must contain ``"main_parameter"`` and one key per
             process step in ``"{process_name}_{index}"`` format, in execution order.
         """
         if not holder.is_loaded():
             return {"error": _NO_PROJECT}
-        filename = _protocol(holder).write_snapshot(name, data)
+        filename = _protocol(holder).write_protocol(name, data)
         return {"filename": filename}
 
     @mcp.tool()
-    def delete_snapshot(filename: str) -> dict:
-        """Permanently delete a protocol snapshot from ``protocols_hystoric/``.
+    def delete_protocol(filename: str) -> dict:
+        """Permanently delete a protocol file from ``protocols_historic/``.
 
-        This action is irreversible. Use ``list_snapshots`` to discover filenames.
+        This action is irreversible. Use ``list_protocols`` to discover filenames.
         """
         if not holder.is_loaded():
             return {"error": _NO_PROJECT}
         try:
-            _protocol(holder).delete_snapshot(filename)
+            _protocol(holder).delete_protocol(filename)
             return {"deleted": filename}
         except FileNotFoundError as exc:
             return {"error": str(exc)}
@@ -139,60 +139,61 @@ def register_tools(mcp: FastMCP, holder: ProjectHolder) -> None:
     # ── Run control ───────────────────────────────────────────────────────────
 
     @mcp.tool()
-    def start_run(snapshot: str, dry_run: bool = False) -> dict:
-        """Start executing a protocol snapshot in the background.
+    def start_run(protocol: str, dry_run: bool = False) -> dict:
+        """Start executing a protocol in the background.
         Returns a ``run_id`` to poll with ``get_run_status``.
 
         Parameters
         ----------
-        snapshot:
-            Filename in ``protocols_hystoric/``.
+        protocol:
+            Filename in ``protocols_historic/``.
         dry_run:
             When ``True``, all HTTP calls to devices are suppressed and the
             workflow runs in simulation mode.
         """
         if not holder.is_loaded():
             return {"error": _NO_PROJECT}
-        run_id = _runner(holder).start(snapshot, dry_run=dry_run)
+        run_id = _runner(holder).start(protocol, dry_run=dry_run)
         return {"run_id": run_id}
 
     @mcp.tool()
-    def get_run_status(run_id: str) -> dict:
-        """Poll the status of a running or completed execution.
+    def get_run_status() -> dict:
+        """Poll the status of the current execution.
         Returns the current state and all events since the last call to this tool.
         Call repeatedly until ``state`` is ``"finished"`` or ``"failed"``."""
         if not holder.is_loaded():
             return {"error": _NO_PROJECT}
-        rec = holder.run_store.get(run_id)
+        rec = holder.run_store.get()
         if rec is None:
-            return {"error": f"Run '{run_id}' not found."}
-        events = holder.run_store.pop_events(run_id)
+            return {"error": "No run is active or recorded."}
+        events = holder.run_store.pop_events()
         return {
-            "run_id": run_id,
+            "run_id": rec.run_id,
             "state": rec.state.value,
             "events": [e.model_dump() for e in events],
         }
 
     @mcp.tool()
-    def get_run_report(run_id: str) -> dict:
-        """Return the full execution report for a finished run.
+    def get_run_report() -> dict:
+        """Return the full execution report for the current or last completed run.
         Returns one WorkflowResult per process step, in execution order."""
         if not holder.is_loaded():
             return {"error": _NO_PROJECT}
-        rec = holder.run_store.get(run_id)
+        rec = holder.run_store.get()
         if rec is None:
-            return {"error": f"Run '{run_id}' not found."}
+            return {"error": "No run is active or recorded."}
         return {
+            "run_id": rec.run_id,
             "state": rec.state.value,
             "results": [r.model_dump() for r in rec.results],
         }
 
     @mcp.tool()
-    def cancel_run(run_id: str) -> dict:
-        """Cancel an active run and signal clients to stop cooperatively."""
+    def cancel_run() -> dict:
+        """Cancel the active run and signal clients to stop cooperatively."""
         if not holder.is_loaded():
             return {"error": _NO_PROJECT}
-        ok = holder.run_store.cancel(run_id)
+        ok = holder.run_store.cancel()
         return {"cancelled": ok}
 
     # ── Process source ────────────────────────────────────────────────────────

@@ -13,24 +13,24 @@ class ProcessInfo(BaseModel):
     config_schema: dict[str, Any]
 
 
-class SnapshotMeta(BaseModel):
+class ProtocolMeta(BaseModel):
     filename: str
     modified: str
     size_bytes: int
 
 
-class SnapshotIn(BaseModel):
-    """Request body for POST /snapshots. Each save always creates a new versioned file."""
+class ProtocolIn(BaseModel):
+    """Request body for POST /protocols. Each save always creates a new versioned file."""
 
     name: str
     data: dict[str, Any]
 
 
 class RunRequest(BaseModel):
-    snapshot: str = Field(
+    protocol: str = Field(
         default="",
-        title="Snapshot name to run",
-        description="Snapshot json file containing the process order and parameters",
+        title="Protocol name to run",
+        description="Protocol json file containing the process order and parameters",
     )
     dry_run: bool = Field(
         default=False,

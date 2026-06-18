@@ -1,9 +1,10 @@
-"""Unit tests for RunStore (Step 03)."""
+"""Unit tests for the singleton RunStore."""
 
 from __future__ import annotations
 
 import threading
 
+import pytest
 
 from chemunited_workflow.api.run_store import RunState, RunStore
 from chemunited_workflow.models import WorkflowExecutionEvent
@@ -16,107 +17,125 @@ def _make_event(msg: str = "test") -> WorkflowExecutionEvent:
     )
 
 
-def test_create_returns_uuid_string():
+def test_try_start_returns_derived_id():
     store = RunStore()
-    run_id = store.create()
-    assert isinstance(run_id, str)
-    assert len(run_id) == 36  # UUID4 format
+    run_id = store.try_start("suzuki_batch_2026-05-15T10-38-00.json")
+    assert run_id is not None
+    assert run_id.startswith("suzuki_batch_2026-05-15T10-38-00_")
 
 
-def test_create_unique_ids():
+def test_try_start_rejects_second_call_while_running():
     store = RunStore()
-    ids = {store.create() for _ in range(10)}
-    assert len(ids) == 10
+    first = store.try_start("my_protocol_2026-01-01T00-00-00.json")
+    assert first is not None
+    second = store.try_start("other_2026-01-01T00-00-01.json")
+    assert second is None
+
+
+def test_try_start_allowed_after_terminal_state():
+    store = RunStore()
+    store.try_start("protocol_2026-01-01T00-00-00.json")
+    store.set_state(success=True)
+    run_id = store.try_start("protocol_2026-01-01T00-00-01.json")
+    assert run_id is not None
 
 
 def test_pop_events_returns_appended_and_clears():
     store = RunStore()
-    run_id = store.create()
+    store.try_start("p_2026-01-01T00-00-00.json")
     e1 = _make_event("a")
     e2 = _make_event("b")
-    store.append_event(run_id, e1)
-    store.append_event(run_id, e2)
-    events = store.pop_events(run_id)
+    store.append_event(e1)
+    store.append_event(e2)
+    events = store.pop_events()
     assert len(events) == 2
     assert events[0].message == "a"
     assert events[1].message == "b"
-    assert store.pop_events(run_id) == []
+    assert store.pop_events() == []
 
 
 def test_cancel_running_returns_true():
     store = RunStore()
-    run_id = store.create()
-    cancel_event = store.cancel_event(run_id)
+    store.try_start("p_2026-01-01T00-00-00.json")
+    cancel_event = store.cancel_event()
     assert cancel_event is not None
     assert not cancel_event.is_set()
 
-    result = store.cancel(run_id)
+    result = store.cancel()
 
     assert result is True
-    assert store.get(run_id).state == RunState.CANCELLED
+    assert store.get().state == RunState.CANCELLED
     assert cancel_event.is_set()
 
 
 def test_cancelled_state_is_sticky():
     store = RunStore()
-    run_id = store.create()
-    assert store.cancel(run_id) is True
-
-    store.set_state(run_id, success=True)
-
-    assert store.get(run_id).state == RunState.CANCELLED
+    store.try_start("p_2026-01-01T00-00-00.json")
+    assert store.cancel() is True
+    store.set_state(success=True)
+    assert store.get().state == RunState.CANCELLED
 
 
-def test_cancel_finished_returns_false():
+def test_cancel_after_finished_returns_false():
     store = RunStore()
-    run_id = store.create()
-    store.set_state(run_id, success=True)
-    assert store.cancel(run_id) is False
+    store.try_start("p_2026-01-01T00-00-00.json")
+    store.set_state(success=True)
+    assert store.cancel() is False
 
 
-def test_active_run_id_returns_running():
+def test_active_run_id_returns_run_id_while_running():
     store = RunStore()
-    run_id = store.create()
+    run_id = store.try_start("p_2026-01-01T00-00-00.json")
     assert store.active_run_id == run_id
 
 
 def test_active_run_id_none_when_finished():
     store = RunStore()
-    run_id = store.create()
-    store.set_state(run_id, success=True)
+    store.try_start("p_2026-01-01T00-00-00.json")
+    store.set_state(success=True)
     assert store.active_run_id is None
 
 
 def test_set_state_finished():
     store = RunStore()
-    run_id = store.create()
-    store.set_state(run_id, success=True)
-    assert store.get(run_id).state == RunState.FINISHED
+    store.try_start("p_2026-01-01T00-00-00.json")
+    store.set_state(success=True)
+    assert store.get().state == RunState.FINISHED
 
 
 def test_set_state_failed():
     store = RunStore()
-    run_id = store.create()
-    store.set_state(run_id, success=False)
-    assert store.get(run_id).state == RunState.FAILED
+    store.try_start("p_2026-01-01T00-00-00.json")
+    store.set_state(success=False)
+    assert store.get().state == RunState.FAILED
 
 
-def test_get_unknown_returns_none():
+def test_get_returns_none_with_no_run():
     store = RunStore()
-    assert store.get("no-such-id") is None
+    assert store.get() is None
+
+
+def test_pop_events_returns_empty_with_no_run():
+    store = RunStore()
+    assert store.pop_events() == []
+
+
+def test_cancel_event_returns_none_with_no_run():
+    store = RunStore()
+    assert store.cancel_event() is None
 
 
 def test_thread_safe_append_events():
     """50 threads each append one event — all 50 should be retrieved."""
     store = RunStore()
-    run_id = store.create()
+    store.try_start("p_2026-01-01T00-00-00.json")
     barrier = threading.Barrier(50)
     errors: list[Exception] = []
 
     def append_one(i: int):
         try:
             barrier.wait()
-            store.append_event(run_id, _make_event(str(i)))
+            store.append_event(_make_event(str(i)))
         except Exception as exc:
             errors.append(exc)
 
@@ -127,5 +146,48 @@ def test_thread_safe_append_events():
         t.join()
 
     assert errors == []
-    events = store.pop_events(run_id)
+    events = store.pop_events()
     assert len(events) == 50
+
+
+def test_lockfile_written_on_start(tmp_path):
+    store = RunStore(project_dir=tmp_path)
+    store.try_start("p_2026-01-01T00-00-00.json")
+    assert (tmp_path / "run.lock").exists()
+
+
+def test_lockfile_deleted_on_finish(tmp_path):
+    store = RunStore(project_dir=tmp_path)
+    store.try_start("p_2026-01-01T00-00-00.json")
+    store.set_state(success=True)
+    assert not (tmp_path / "run.lock").exists()
+
+
+def test_lockfile_deleted_on_cancel(tmp_path):
+    store = RunStore(project_dir=tmp_path)
+    store.try_start("p_2026-01-01T00-00-00.json")
+    store.cancel()
+    assert not (tmp_path / "run.lock").exists()
+
+
+def test_lockfile_restores_running_state_on_startup(tmp_path):
+    import json
+    (tmp_path / "run.lock").write_text(
+        json.dumps({"run_id": "stale_run", "state": "running"}),
+        encoding="utf-8",
+    )
+    store = RunStore(project_dir=tmp_path)
+    assert store.active_run_id == "stale_run"
+    assert store.try_start("new_p_2026-01-01T00-00-00.json") is None
+
+
+def test_set_project_dir_restores_lockfile(tmp_path):
+    import json
+    (tmp_path / "run.lock").write_text(
+        json.dumps({"run_id": "stale_run", "state": "running"}),
+        encoding="utf-8",
+    )
+    store = RunStore()
+    assert store.active_run_id is None
+    store.set_project_dir(tmp_path)
+    assert store.active_run_id == "stale_run"

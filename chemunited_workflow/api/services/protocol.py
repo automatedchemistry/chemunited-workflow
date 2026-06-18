@@ -50,13 +50,13 @@ class ProtocolService:
             "main_parameter_schema": self._main_parameter_class.model_json_schema(),
         }
 
-    # ── Snapshot CRUD ────────────────────────────────────────────────────────
+    # ── Protocol CRUD ────────────────────────────────────────────────────────
 
     @property
-    def _snapshot_dir(self) -> Path:
-        return self._project_dir / "protocols_hystoric"
+    def _protocol_dir(self) -> Path:
+        return self._project_dir / "protocols_historic"
 
-    def list_snapshots(self) -> list[dict[str, Any]]:
+    def list_protocols(self) -> list[dict[str, Any]]:
         return [
             {
                 "filename": f.name,
@@ -64,30 +64,40 @@ class ProtocolService:
                 "size_bytes": f.stat().st_size,
             }
             for f in sorted(
-                self._snapshot_dir.glob("*.json"),
+                self._protocol_dir.glob("*.json"),
                 key=lambda p: p.stat().st_mtime,
                 reverse=True,
             )
         ]
 
-    def read_snapshot(self, filename: str) -> dict[str, Any]:
-        path = self._snapshot_dir / filename
+    def read_protocol(self, filename: str) -> dict[str, Any]:
+        path = self._protocol_dir / filename
         if not path.exists():
-            raise FileNotFoundError(f"Snapshot '{filename}' not found.")
+            raise FileNotFoundError(f"Protocol '{filename}' not found.")
         return json.loads(path.read_text(encoding="utf-8"))
 
-    def write_snapshot(self, name: str, data: dict[str, Any]) -> str:
+    _INVALID_NAME_CHARS = re.compile(r'[/\\:?#*<>|]')
+
+    def write_protocol(self, name: str, data: dict[str, Any]) -> str:
         """Validate all process configs, then write. Returns the new filename."""
-        self._validate_snapshot(data)
+        name = name.strip()
+        if not name:
+            raise ValueError("Protocol name must not be empty.")
+        if self._INVALID_NAME_CHARS.search(name):
+            raise ValueError(
+                f"Protocol name '{name}' contains invalid characters. "
+                "Avoid: / \\ : ? # * < > |"
+            )
+        self._validate_protocol(data)
         timestamp = datetime.now().strftime("%Y-%m-%dT%H-%M-%S")
         filename = f"{name}_{timestamp}.json"
-        path = self._snapshot_dir / filename
+        path = self._protocol_dir / filename
         path.write_text(
             json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8"
         )
         return filename
 
-    def _validate_snapshot(self, data: dict[str, Any]) -> None:
+    def _validate_protocol(self, data: dict[str, Any]) -> None:
         for key, params in data.items():
             if key == "main_parameter":
                 self._main_parameter_class.model_validate(params)
@@ -95,12 +105,12 @@ class ProtocolService:
             m = re.fullmatch(r"(.+)_(\d+)", key)
             if not m:
                 raise ValueError(
-                    f"Invalid snapshot key '{key}'. Expected '{{process}}_{{index}}'."
+                    f"Invalid protocol key '{key}'. Expected '{{process}}_{{index}}'."
                 )
             process_name = m.group(1)
             if process_name not in self._configs:
                 raise ValueError(
-                    f"Unknown process '{process_name}' in snapshot key '{key}'."
+                    f"Unknown process '{process_name}' in protocol key '{key}'."
                 )
             self._configs[process_name].model_validate(params)
 
@@ -120,12 +130,12 @@ class ProtocolService:
             raise FileNotFoundError(f"Process '{name}' not found.")
         return target.read_text(encoding="utf-8")
 
-    # ── Snapshot delete ──────────────────────────────────────────────────────
+    # ── Protocol delete ──────────────────────────────────────────────────────
 
-    def delete_snapshot(self, filename: str) -> None:
-        path = self._snapshot_dir / filename
+    def delete_protocol(self, filename: str) -> None:
+        path = self._protocol_dir / filename
         if not path.exists():
-            raise FileNotFoundError(f"Snapshot '{filename}' not found.")
+            raise FileNotFoundError(f"Protocol '{filename}' not found.")
         path.unlink()
 
     # ── Components ───────────────────────────────────────────────────────────

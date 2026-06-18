@@ -13,8 +13,8 @@ from .routers.monitoring import router as monitoring_router
 from .routers.processes import router as processes_router
 from .routers.project import router as project_router
 from .routers.runner import router as runner_router
-from .routers.snapshots import read_router as snapshots_read_router
-from .routers.snapshots import write_router as snapshots_write_router
+from .routers.protocols import read_router as protocols_read_router
+from .routers.protocols import write_router as protocols_write_router
 from .routers.ui import router as ui_router
 
 _STATIC_DIR = Path(__file__).parent / "static"
@@ -37,8 +37,8 @@ def create_api() -> FastAPI:
     app.include_router(ui_router)
     app.include_router(project_router)
     app.include_router(processes_router)
-    app.include_router(snapshots_read_router)
-    app.include_router(snapshots_write_router)
+    app.include_router(protocols_read_router)
+    app.include_router(protocols_write_router)
     app.include_router(runner_router)
     app.include_router(components_router)
     app.include_router(logs_router)

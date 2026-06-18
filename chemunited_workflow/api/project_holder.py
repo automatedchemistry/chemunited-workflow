@@ -109,6 +109,7 @@ class ProjectHolder:
             store=self._monitoring_store,
         )
         new_templates = _make_templates(modules.project_dir)
+        self._run_store.set_project_dir(modules.project_dir)
         with self._lock:
             self._project_dir = modules.project_dir
             self._protocol_service = new_protocol

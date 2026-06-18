@@ -7,10 +7,10 @@
   <div>
     <span class="eyebrow">Protocol execution</span>
     <h1>Run Control</h1>
-    <p>Configure a protocol snapshot, start execution asynchronously, and monitor live state and workflow events.</p>
+    <p>Select a protocol, start execution asynchronously, and monitor live state and workflow events.</p>
   </div>
   <div class="page-actions">
-    <a href="/snapshots-ui" class="utility-link">Snapshots</a>
+    <a href="/protocols-ui" class="utility-link">Protocols</a>
     <a href="/devices" class="utility-link">Devices</a>
   </div>
 </header>
@@ -33,14 +33,14 @@
 
     <form class="control-form" id="run-form">
       <div>
-        <label for="snapshot-select">Snapshot</label>
-        <select id="snapshot-select" {% if snapshots|length == 0 %}disabled{% endif %}>
-          <option value="" disabled {% if not preselect %}selected{% endif %}>Select a snapshot</option>
-          {% for s in snapshots %}
+        <label for="protocol-select">Protocol</label>
+        <select id="protocol-select" {% if protocols|length == 0 %}disabled{% endif %}>
+          <option value="" disabled {% if not preselect %}selected{% endif %}>Select a protocol</option>
+          {% for s in protocols %}
             <option value="{{ s.filename }}" {% if s.filename == preselect %}selected{% endif %}>{{ s.filename }}</option>
           {% endfor %}
         </select>
-        <span class="field-help">Protocol snapshot from the project history folder.</span>
+        <span class="field-help">Protocol file from the project history folder.</span>
       </div>
 
       <div>
@@ -51,14 +51,14 @@
 
       <div class="toggle-list" aria-label="Execution options">
         <label class="toggle-row" for="dry-run-check">
-          <input type="checkbox" id="dry-run-check" {% if snapshots|length == 0 %}disabled{% endif %}>
+          <input type="checkbox" id="dry-run-check" {% if protocols|length == 0 %}disabled{% endif %}>
           <span>
             <span class="toggle-title">Dry run</span>
             <span class="field-help">Validate workflow logic without calling physical devices.</span>
           </span>
         </label>
         <label class="toggle-row" for="error-resilient-check">
-          <input type="checkbox" id="error-resilient-check" {% if snapshots|length == 0 %}disabled{% endif %}>
+          <input type="checkbox" id="error-resilient-check" {% if protocols|length == 0 %}disabled{% endif %}>
           <span>
             <span class="toggle-title">Error-resilient mode</span>
             <span class="field-help">Log client-side device errors and allow independent workflow branches to continue.</span>
@@ -67,12 +67,12 @@
       </div>
 
       <div class="control-actions">
-        <button id="start-btn" type="button" class="primary-action" {% if not snapshots %}disabled{% endif %}>Start Protocol</button>
+        <button id="start-btn" type="button" class="primary-action" {% if not protocols %}disabled{% endif %}>Start Protocol</button>
         <button id="cancel-btn" type="button" class="danger-action" hidden>Cancel Run</button>
         <a id="report-link" href="#" role="button" class="outline" hidden>View Report</a>
       </div>
       <p id="run-message" class="form-message" role="status" aria-live="polite">
-        {% if not snapshots %}No snapshots are available for execution.{% endif %}
+        {% if not protocols %}No protocols are available for execution.{% endif %}
       </p>
     </form>
   </section>
@@ -217,10 +217,10 @@
     streamState.textContent = 'Closed';
   }
 
-  function openStream(runId) {
+  function openStream() {
     if (eventSource) eventSource.close();
     streamState.textContent = 'Opening';
-    eventSource = new EventSource('/run/' + runId + '/stream');
+    eventSource = new EventSource('/run/stream');
 
     eventSource.onopen = function () {
       streamState.textContent = 'Open';
@@ -257,16 +257,16 @@
     if (eventSource) { eventSource.close(); eventSource = null; }
     resetRunUi();
     if (currentRunId && state && (state === 'finished' || state === 'failed' || state === 'cancelled')) {
-      reportLink.href = '/report/' + currentRunId;
+      reportLink.href = '/report';
       reportLink.hidden = false;
       setMessage('Run ' + state + '. Report is available.', state === 'failed' ? 'error' : 'success');
     }
   }
 
   startBtn.addEventListener('click', async function () {
-    const snapshot = document.getElementById('snapshot-select').value;
-    if (!snapshot) {
-      setMessage('Please select a snapshot before starting.', 'error');
+    const protocol = document.getElementById('protocol-select').value;
+    if (!protocol) {
+      setMessage('Please select a protocol before starting.', 'error');
       return;
     }
 
@@ -288,7 +288,7 @@
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          snapshot: snapshot,
+          protocol: protocol,
           dry_run: dryRun,
           timeout_commands: timeoutCommands,
           error_resilient: errorResilient
@@ -305,10 +305,9 @@
       const data = await resp.json();
       currentRunId = data.run_id;
       runIdDisplay.textContent = currentRunId;
-      cancelBtn.dataset.runId = currentRunId;
       startBtn.textContent = 'Running';
       setMessage('Run accepted. Listening for live events.');
-      openStream(currentRunId);
+      openStream();
     } catch (err) {
       setMessage('Network error: ' + err.message, 'error');
       resetRunUi();
@@ -318,13 +317,11 @@
   });
 
   cancelBtn.addEventListener('click', async function () {
-    const runId = currentRunId;
-    if (!runId) return;
     cancelBtn.disabled = true;
     cancelBtn.textContent = 'Cancelling...';
     setMessage('Cancellation requested.');
     try {
-      await fetch('/run/' + runId, { method: 'DELETE' });
+      await fetch('/run/', { method: 'DELETE' });
       setState('cancelled');
     } finally {
       cancelBtn.disabled = false;
@@ -334,11 +331,11 @@
 
   (function () {
     const params = new URLSearchParams(window.location.search);
-    const snap = params.get('snapshot');
-    if (snap) {
-      const sel = document.getElementById('snapshot-select');
+    const proto = params.get('protocol');
+    if (proto) {
+      const sel = document.getElementById('protocol-select');
       for (let i = 0; i < sel.options.length; i++) {
-        if (sel.options[i].value === snap) { sel.selectedIndex = i; break; }
+        if (sel.options[i].value === proto) { sel.selectedIndex = i; break; }
       }
     }
   })();

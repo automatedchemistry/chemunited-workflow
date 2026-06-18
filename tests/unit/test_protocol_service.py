@@ -18,7 +18,7 @@ _MODULE = "chemunited_workflow.api.services.protocol._requests"
 @pytest.fixture
 def svc(tmp_path):
     (tmp_path / "protocols").mkdir()
-    (tmp_path / "protocols_hystoric").mkdir()
+    (tmp_path / "protocols_historic").mkdir()
     (tmp_path / "log").mkdir()
     (tmp_path / "connectivity").mkdir()
 
@@ -66,25 +66,44 @@ def test_read_process_not_found(svc):
         svc.read_process("ghost")
 
 
-# ── delete_snapshot ───────────────────────────────────────────────────────────
+# ── write_protocol name validation ────────────────────────────────────────────
 
 
-def test_delete_snapshot_existing(svc, tmp_path):
-    snap = tmp_path / "protocols_hystoric" / "snap_001.json"
+def test_write_protocol_rejects_empty_name(svc):
+    with pytest.raises(ValueError, match="empty"):
+        svc.write_protocol("", {})
+
+
+def test_write_protocol_rejects_whitespace_only_name(svc):
+    with pytest.raises(ValueError, match="empty"):
+        svc.write_protocol("   ", {})
+
+
+@pytest.mark.parametrize("bad_char", ["/", "\\", ":", "?", "#", "*", "<", ">", "|"])
+def test_write_protocol_rejects_invalid_chars(svc, bad_char):
+    with pytest.raises(ValueError, match="invalid characters"):
+        svc.write_protocol(f"my{bad_char}protocol", {})
+
+
+# ── delete_protocol ───────────────────────────────────────────────────────────
+
+
+def test_delete_protocol_existing(svc, tmp_path):
+    snap = tmp_path / "protocols_historic" / "snap_001.json"
     snap.write_text("{}", encoding="utf-8")
-    result = svc.delete_snapshot("snap_001.json")
+    result = svc.delete_protocol("snap_001.json")
     assert result is None
 
 
-def test_delete_snapshot_missing(svc):
+def test_delete_protocol_missing(svc):
     with pytest.raises(FileNotFoundError):
-        svc.delete_snapshot("missing.json")
+        svc.delete_protocol("missing.json")
 
 
-def test_delete_snapshot_file_gone_after_call(svc, tmp_path):
-    snap = tmp_path / "protocols_hystoric" / "snap_002.json"
+def test_delete_protocol_file_gone_after_call(svc, tmp_path):
+    snap = tmp_path / "protocols_historic" / "snap_002.json"
     snap.write_text("{}", encoding="utf-8")
-    svc.delete_snapshot("snap_002.json")
+    svc.delete_protocol("snap_002.json")
     assert not snap.exists()
 
 

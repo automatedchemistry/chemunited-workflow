@@ -1,8 +1,8 @@
 """End-to-end HTTP integration tests using a live uvicorn server.
 
 Two executions of run_complex.json (dry_run=True):
-  Run A — exercises /run/{id}/status and /run/{id}/report.
-  Run B — exercises /run/{id}/stream and /run/{id}/report.
+  Run A — exercises /run/status and /run/report.
+  Run B — exercises /run/stream and /run/report.
 
 Heartbeat timing is not asserted here; tests/unit/test_runner_stream.py owns that.
 """
@@ -142,21 +142,21 @@ def _load_module(path: Path, name: str):
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     # Register in sys.modules so inspect.getfile() resolves the class source path,
-    # which load_parameters() needs to locate protocols_hystoric/ at runtime.
+    # which load_parameters() needs to locate protocols_historic/ at runtime.
     sys.modules[name] = module
     spec.loader.exec_module(module)
     return module
 
 
 def _poll_until_finished(
-    base_url: str, run_id: str, timeout: float = _RUN_TIMEOUT
+    base_url: str, timeout: float = _RUN_TIMEOUT
 ) -> tuple[str, list[dict]]:
     """Poll /status until terminal state. Returns (state, all_events_seen)."""
     deadline = time.time() + timeout
     all_events: list[dict] = []
     state = "running"
     while time.time() < deadline:
-        resp = _requests.get(f"{base_url}/run/{run_id}/status", timeout=5.0)
+        resp = _requests.get(f"{base_url}/run/status", timeout=5.0)
         assert resp.status_code == 200
         body = resp.json()
         all_events.extend(body.get("events", []))
@@ -268,7 +268,7 @@ def live_server(app_e2e):
     started = False
     while time.time() < deadline:
         try:
-            r = _requests.get(f"{base_url}/run/active", timeout=0.5)
+            r = _requests.get(f"{base_url}/run/pool", timeout=0.5)
             if r.status_code == 200:
                 started = True
                 break
@@ -302,17 +302,16 @@ def test_run_a_status_poll_and_report(live_server):
 
     r = _requests.post(
         f"{base_url}/run/",
-        json={"snapshot": "run_complex.json", "dry_run": True},
+        json={"protocol": "run_complex.json", "dry_run": True},
         timeout=5.0,
     )
     assert r.status_code == 202
-    run_id = r.json()["run_id"]
 
-    state, events = _poll_until_finished(base_url, run_id)
+    state, events = _poll_until_finished(base_url)
     assert state == "finished", f"Run did not finish: state={state!r}"
     assert len(events) > 0, "Expected at least one event from status polling"
 
-    report_r = _requests.get(f"{base_url}/run/{run_id}/report", timeout=5.0)
+    report_r = _requests.get(f"{base_url}/run/report", timeout=5.0)
     assert report_r.status_code == 200
     report = report_r.json()
     assert report["state"] == "finished"
@@ -370,17 +369,16 @@ def test_run_b_stream_and_report(live_server):
 
     r = _requests.post(
         f"{base_url}/run/",
-        json={"snapshot": "run_complex.json", "dry_run": True},
+        json={"protocol": "run_complex.json", "dry_run": True},
         timeout=5.0,
     )
     assert r.status_code == 202
-    run_id = r.json()["run_id"]
 
     node_events: list[dict] = []
     final_state: str | None = None
 
     with _requests.get(
-        f"{base_url}/run/{run_id}/stream", stream=True, timeout=_RUN_TIMEOUT
+        f"{base_url}/run/stream", stream=True, timeout=_RUN_TIMEOUT
     ) as resp:
         assert resp.status_code == 200
         for raw_line in resp.iter_lines(decode_unicode=True):
@@ -412,7 +410,7 @@ def test_run_b_stream_and_report(live_server):
         len(loopback_events) == 3
     ), f"Expected 3 LOOPBACK_TRIGGERED events (iterations 0-2); got {len(loopback_events)}"
 
-    report_r = _requests.get(f"{base_url}/run/{run_id}/report", timeout=5.0)
+    report_r = _requests.get(f"{base_url}/run/report", timeout=5.0)
     assert report_r.status_code == 200
     report = report_r.json()
     assert report["state"] == "finished"
