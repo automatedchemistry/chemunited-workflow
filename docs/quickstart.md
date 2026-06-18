@@ -75,7 +75,7 @@ my_project/
 │   └── my_workflow.py           # Process subclasses (also readable via read_process)
 ├── connectivity/
 │   └── associations.json        # Device URL mapping
-├── protocols_hystoric/          # Versioned protocol snapshots
+├── protocols_historic/          # Versioned protocol files
 ├── log/                         # Execution logs
 │   ├── archive/                 # Archived logs (populated by archive_log)
 │   └── monitoring/              # Monitoring session profiles (one sub-dir per session_id)

@@ -9,14 +9,14 @@ When running in `--mcp` or `--mcp-http` mode, the following tools are exposed to
 | `list_processes` | Discover available process names and schemas |
 | `get_process_schema` | Full parameter schema for a named process |
 | `read_process` | Source code of a process definition file |
-| `list_snapshots` | List snapshots in `protocols_hystoric/` |
-| `get_snapshot` | Read a snapshot's full JSON content |
-| `create_snapshot` | Validate and save a new versioned snapshot |
-| `delete_snapshot` | Permanently delete a snapshot |
-| `start_run` | Execute a snapshot; returns a `run_id` |
-| `get_run_status` | Poll run state and events |
+| `list_protocols` | List protocol files in `protocols_historic/` |
+| `get_protocol` | Read a protocol file's full JSON content |
+| `create_protocol` | Validate and save a new versioned protocol file |
+| `delete_protocol` | Permanently delete a protocol file |
+| `start_run` | Execute a protocol file; returns a derived `run_id` (`{stem}_{datetime}`), or an error if a run is already active |
+| `get_run_status` | Poll run state and events (no run ID required — only one run at a time) |
 | `get_run_report` | Full per-step execution report |
-| `cancel_run` | Cancel an active run |
+| `cancel_run` | Cancel the active run (cooperative — stops at the next step checkpoint) |
 | `get_components` | Return the device connectivity map |
 | `ping_components` | Check reachability of all device URLs |
 | `list_logs` | List log files |

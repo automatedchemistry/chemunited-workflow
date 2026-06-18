@@ -19,32 +19,38 @@ All endpoints except `GET /project/` return HTTP `503` if no project has been lo
 | `GET` | `/processes/{name}/schema` | JSON schema for a process config |
 | `GET` | `/processes/{name}/source` | Full source code of a process file |
 
-## Snapshots
+## Protocols
 
 | Method | Path | Description |
 |--------|------|-------------|
-| `GET` | `/snapshots/` | List saved protocol snapshots |
-| `GET` | `/snapshots/{filename}` | Read a snapshot by filename |
-| `POST` | `/snapshots/` | Save a new versioned snapshot |
-| `DELETE` | `/snapshots/{filename}` | Permanently delete a snapshot |
+| `GET` | `/protocols/` | List saved protocol files |
+| `GET` | `/protocols/{filename}` | Read a protocol file by filename |
+| `POST` | `/protocols/` | Save a new versioned protocol file |
+| `DELETE` | `/protocols/{filename}` | Permanently delete a protocol file |
+
+Protocol names may not contain the characters `/ \ : ? # * < > |`. Names are
+stored as `{name}_{YYYY-MM-DDTHH-MM-SS}.json` in `protocols_historic/`.
 
 ## Run control
 
+Only one run can be active at a time (the physical platform enforces this constraint). Starting a second run while one is active returns HTTP `409`.
+
 | Method | Path | Description |
 |--------|------|-------------|
-| `POST` | `/run/` | Start a workflow run from a snapshot. Body: `{"snapshot": "<snapshot filename>", "dry_run": false}`. `snapshot` is required; `dry_run` defaults to `false`. Returns HTTP `202` with a `run_id`. |
-| `GET` | `/run/active` | Return the active run id as `{"run_id": "<id>"}` or `{"run_id": null}` |
-| `GET` | `/run/{run_id}/status` | Poll run state and events. Events are cleared after each read; terminal states are `finished`, `failed`, and `cancelled`. |
-| `GET` | `/run/{run_id}/report` | Full execution report for a finished run |
-| `DELETE` | `/run/{run_id}` | Cancel an active run |
-| `GET` | `/run/{run_id}/stream` | Stream workflow events for a run |
-| `GET` | `/run/pool` | Drain pending device commands and delete their pool files; returns an empty list when no commands are pending |
+| `POST` | `/run/` | Start a workflow run from a protocol file. Body: `{"protocol": "<filename>", "dry_run": false}`. `protocol` is required; `dry_run` defaults to `false`. Returns HTTP `202` with a derived `run_id`, or `409` if a run is already active. |
+| `GET` | `/run/status` | Poll the current run state and events. Events are cleared after each read; terminal states are `finished`, `failed`, and `cancelled`. Returns `404` if no run has been recorded. |
+| `GET` | `/run/report` | Full execution report for the current or last run. Returns `202` if the run has not finished yet. |
+| `DELETE` | `/run/` | Cancel the active run. Sends a cooperative cancellation signal — the current in-flight device call completes, then execution stops at the next step checkpoint. Returns `404` if no run is active. |
+| `GET` | `/run/stream` | Stream workflow events as Server-Sent Events (SSE). Closes with a terminal-state frame when the run ends. |
+| `GET` | `/run/pool` | Drain pending device commands and delete their pool files; returns an empty list when no commands are pending. |
+
+The derived `run_id` has the format `{protocol_stem}_{YYYY-MM-DDTHH-MM-SS}` and is returned in the `POST /run/` response. It is human-readable and tied to the protocol name and start time.
 
 Example `POST /run/` request:
 
 ```json
 {
-  "snapshot": "snapshot_20250101T120000.json",
+  "protocol": "suzuki_batch_2026-01-15T09-30-00.json",
   "dry_run": false,
   "error_resilient": false
 }

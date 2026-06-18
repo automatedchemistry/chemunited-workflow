@@ -6,10 +6,10 @@ When the FastAPI server is running, open `http://127.0.0.1:3116/` to access the 
 
 | Page | URL | Description |
 |------|-----|-------------|
-| Dashboard | `/` | Active run status, recent snapshots, quick-start links |
+| Dashboard | `/` | Active run status, recent protocols, quick-start links |
 | Run Control | `/run-control` | Start/cancel runs, live event feed via SSE |
-| Report | `/report/{run_id}` | Per-node outcome table for a finished run |
-| Snapshots | `/snapshots-ui` | List and delete protocol snapshots |
+| Report | `/report` | Per-node outcome table for the current or last run |
+| Protocols | `/protocols-ui` | List and delete saved protocol files |
 | Logs | `/logs-ui` | Browse and tail log files |
 | Devices | `/devices` | Component connectivity map and ping check |
 
