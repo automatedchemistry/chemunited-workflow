@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import math
 
-from .quantity import ureg
+from chemunited_quantities import ureg
 
 _TIMEOUT_COMMANDS_ERROR = (
     "timeout_commands must be a non-negative time duration like '10 s', "

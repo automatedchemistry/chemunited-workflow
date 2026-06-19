@@ -10,17 +10,18 @@
 
 ## Physical Units
 
-Use `ChemUnitQuantity` for values that carry SI units:
+Use `ChemUnitQuantity` from `chemunited-quantities` for values that carry SI units:
 
 ```python
-from chemunited_workflow import ChemUnitQuantity
+from chemunited_quantities import ChemUnitQuantity
 
 volume = ChemUnitQuantity.parse("500 ul")
 double = volume * 2          # 1000 ul
 in_ml  = volume.to("ml")     # 0.5 ml
 ```
 
-Units are validated and propagated through arithmetic. `ChemQuantityValidator` integrates with Pydantic models.
+Units are validated and propagated through arithmetic. Import
+`ChemQuantityValidator` directly from `chemunited_quantities` for Pydantic models.
 
 ## Dry-Run Mode
 

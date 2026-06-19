@@ -87,7 +87,7 @@
         <mxCell id="lib-group" value="Key Dependencies" style="rounded=1;whiteSpace=wrap;html=1;dashed=1;strokeColor=#64748b;fillColor=none;fontStyle=1;fontSize=14;verticalAlign=top;spacingTop=8;" vertex="1" parent="1">
           <mxGeometry x="350" y="475" width="300" height="260" as="geometry" />
         </mxCell>
-        <mxCell id="libs" value="networkx: workflow graph&lt;br&gt;pydantic: config validation&lt;br&gt;pint: physical units&lt;br&gt;requests: device HTTP&lt;br&gt;FastAPI / MCP: service exposure&lt;br&gt;loguru: execution and HTTP logs" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f3f4f6;strokeColor=#6b7280;fontColor=#374151;align=left;spacingLeft=12;" vertex="1" parent="1">
+        <mxCell id="libs" value="networkx: workflow graph&lt;br&gt;pydantic: config validation&lt;br&gt;chemunited-quantities: physical units&lt;br&gt;requests: device HTTP&lt;br&gt;FastAPI / MCP: service exposure&lt;br&gt;loguru: execution and HTTP logs" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f3f4f6;strokeColor=#6b7280;fontColor=#374151;align=left;spacingLeft=12;" vertex="1" parent="1">
           <mxGeometry x="385" y="525" width="230" height="160" as="geometry" />
         </mxCell>
 

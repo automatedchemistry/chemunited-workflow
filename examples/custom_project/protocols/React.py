@@ -6,7 +6,7 @@ from __future__ import annotations
 import networkx as nx
 from pydantic import BaseModel, ConfigDict
 
-# from chemunited.core.utils import ChemQuantityValidator, ChemUnitQuantity
+# from chemunited_quantities import ChemQuantityValidator, ChemUnitQuantity
 
 from chemunited_workflow import (
     NodeExecutionContext,

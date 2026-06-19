@@ -17,7 +17,7 @@ from chemunited_workflow.exceptions import (
     ConcurrentClientAccessError,
     RunCancelledError,
 )
-from chemunited_workflow.quantity import ChemUnitQuantity
+from chemunited_quantities import ChemUnitQuantity
 
 BASE_URL = "http://device-server:8000"
 

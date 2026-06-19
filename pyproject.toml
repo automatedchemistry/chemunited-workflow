@@ -9,6 +9,7 @@ description = "Conditional NetworkX-based workflow execution with loopbacks and 
 requires-python = ">=3.11"
 license = { file = "LICENSE" }
 dependencies = [
+    "chemunited-quantities>=0.0.2",
     "networkx>=3.2",
     "loguru>=0.7",
     "rich>=13.0",
@@ -17,8 +18,6 @@ dependencies = [
     "starlette>=1.0.1",
     "mcp[cli]>=1.23",
     "click>=8.1",
-    "pint>=0.23",
-    "pydantic-pint>=0.3",
     "pydantic>=2.10",
     "uvicorn>=0.29",
     "pystray>=0.19",
