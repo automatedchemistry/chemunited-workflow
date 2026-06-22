@@ -4,12 +4,16 @@ from __future__ import annotations
 
 import json
 import re
+import warnings
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 import requests as _requests
-from pydantic import BaseModel
+from pydantic import AliasChoices, BaseModel, TypeAdapter
+from pydantic.fields import FieldInfo
+from pydantic.json_schema import PydanticJsonSchemaWarning
+from pydantic_core import PydanticUndefined
 
 from chemunited_workflow import Process
 
@@ -29,12 +33,49 @@ class ProtocolService:
 
     # ── Process introspection ────────────────────────────────────────────────
 
+    @staticmethod
+    def _schema_property_name(field_name: str, field: FieldInfo) -> str:
+        validation_alias = field.validation_alias
+        if isinstance(validation_alias, str):
+            return validation_alias
+        if isinstance(validation_alias, AliasChoices):
+            for choice in validation_alias.choices:
+                if isinstance(choice, str):
+                    return choice
+        return field_name
+
+    @classmethod
+    def _model_json_schema(cls, model: type[BaseModel]) -> dict[str, Any]:
+        with warnings.catch_warnings():
+            warnings.filterwarnings(
+                "ignore",
+                message=r".*\[non-serializable-default\]$",
+                category=PydanticJsonSchemaWarning,
+            )
+            schema = model.model_json_schema()
+
+        properties = schema.get("properties", {})
+        for field_name, field in model.model_fields.items():
+            if field.default is PydanticUndefined or field.default_factory is not None:
+                continue
+
+            property_name = cls._schema_property_name(field_name, field)
+            property_schema = properties.get(property_name)
+            if property_schema is None or "default" in property_schema:
+                continue
+
+            property_schema["default"] = TypeAdapter(
+                field.rebuild_annotation()
+            ).dump_python(field.default, mode="json")
+
+        return schema
+
     def list_processes(self) -> list[dict[str, Any]]:
         return [
             {
                 "name": name,
                 "description": (cls.__doc__ or "").strip(),
-                "config_schema": self._configs[name].model_json_schema(),
+                "config_schema": self._model_json_schema(self._configs[name]),
             }
             for name, cls in self._processes.items()
         ]
@@ -46,8 +87,10 @@ class ProtocolService:
             )
         return {
             "process": name,
-            "config_schema": self._configs[name].model_json_schema(),
-            "main_parameter_schema": self._main_parameter_class.model_json_schema(),
+            "config_schema": self._model_json_schema(self._configs[name]),
+            "main_parameter_schema": self._model_json_schema(
+                self._main_parameter_class
+            ),
         }
 
     # ── Protocol CRUD ────────────────────────────────────────────────────────

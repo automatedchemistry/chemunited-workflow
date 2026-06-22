@@ -24,6 +24,10 @@ When running in `--mcp` (stdio) mode or with `--with-mcp` (HTTP endpoint embedde
 | `search_logs` | Search log files for a query string |
 | `archive_log` | Move a log file to `log/archive/` |
 
+The schemas returned by `list_processes` and `get_process_schema` contain
+JSON-compatible defaults. Custom validated defaults are serialized using their
+configured Pydantic field serializers.
+
 See [Deployment Modes](deployment.md#mcp-server) for how to start the MCP server.
 
 ---

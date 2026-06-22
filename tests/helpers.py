@@ -4,12 +4,19 @@ from pathlib import Path
 
 
 MINIMAL_PROCESS_SRC = """
+from typing import Annotated
+
 from pydantic import BaseModel
+from chemunited_quantities import ChemQuantityValidator, ChemUnitQuantity
 from chemunited_workflow import Process, NodeExecutionContext, WorkflowEdgeSpec, WorkflowNodeSpec
 import networkx as nx
 
 class MyConfig(BaseModel):
     value: float = 1.0
+    flow_rate: Annotated[
+        ChemUnitQuantity,
+        ChemQuantityValidator("ml/min"),
+    ] = ChemUnitQuantity("0.1 ml/min")
 
 class MyProcess(Process):
     def build_workflow(self):
@@ -25,11 +32,18 @@ class MyProcess(Process):
 """
 
 MAIN_PARAMETERS_SRC = """
+from typing import Annotated
+
+from chemunited_quantities import ChemQuantityValidator, ChemUnitQuantity
 from pydantic import BaseModel
 
 class MainParameter(BaseModel):
     reagent_volume_ml: float = 5.0
     target_temperature_c: float = 25.0
+    main_flow_rate: Annotated[
+        ChemUnitQuantity,
+        ChemQuantityValidator("ml/min"),
+    ] = ChemUnitQuantity("0.2 ml/min")
 """
 
 

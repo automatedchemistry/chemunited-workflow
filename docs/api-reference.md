@@ -19,6 +19,10 @@ All endpoints except `GET /project/` return HTTP `503` if no project has been lo
 | `GET` | `/processes/{name}/schema` | JSON schema for a process config |
 | `GET` | `/processes/{name}/source` | Full source code of a process file |
 
+Process schemas include JSON-compatible defaults. Defaults stored as custom
+validated Python types are serialized through their configured Pydantic field
+serializer before being returned.
+
 ## Protocols
 
 | Method | Path | Description |

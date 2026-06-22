@@ -127,8 +127,13 @@ def client(app):
 def test_list_processes(client):
     r = client.get("/processes/")
     assert r.status_code == 200
-    names = [p["name"] for p in r.json()]
+    processes = r.json()
+    names = [p["name"] for p in processes]
     assert "my_process" in names
+    process = next(p for p in processes if p["name"] == "my_process")
+    assert process["config_schema"]["properties"]["flow_rate"]["default"] == (
+        "0.1 milliliter / minute"
+    )
 
 
 def test_get_process_schema_unknown(client):
@@ -139,7 +144,14 @@ def test_get_process_schema_unknown(client):
 def test_get_process_schema_known(client):
     r = client.get("/processes/my_process/schema")
     assert r.status_code == 200
-    assert "config_schema" in r.json()
+    payload = r.json()
+    assert payload["config_schema"]["properties"]["flow_rate"]["default"] == (
+        "0.1 milliliter / minute"
+    )
+    assert (
+        payload["main_parameter_schema"]["properties"]["main_flow_rate"]["default"]
+        == "0.2 milliliter / minute"
+    )
 
 
 # ── /protocols ────────────────────────────────────────────────────────────────

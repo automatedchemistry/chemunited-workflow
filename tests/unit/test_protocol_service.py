@@ -3,16 +3,21 @@
 from __future__ import annotations
 
 import json
+import warnings
 from pathlib import Path
+from typing import Annotated
 from unittest.mock import MagicMock, patch
 
 import pytest
 import requests
-from pydantic import BaseModel
+from chemunited_quantities import ChemQuantityValidator, ChemUnitQuantity
+from pydantic import AliasChoices, BaseModel, Field
+from pydantic.json_schema import PydanticJsonSchemaWarning
 
 from chemunited_workflow.api.services.protocol import ProtocolService
 
 _MODULE = "chemunited_workflow.api.services.protocol._requests"
+FlowRate = Annotated[ChemUnitQuantity, ChemQuantityValidator("ml/min")]
 
 
 @pytest.fixture
@@ -42,6 +47,94 @@ def svc(tmp_path):
         processes={},
         configs={},
         main_parameter_class=FakeMain,
+    )
+
+
+# ── Process schema generation ─────────────────────────────────────────────────
+
+
+def _schema_service(tmp_path, factory_calls=None):
+    def make_values():
+        if factory_calls is not None:
+            factory_calls.append("called")
+        return ["generated"]
+
+    class FakeConfig(BaseModel):
+        rate: FlowRate = ChemUnitQuantity("0.1 ml/min")
+        label: str = "pump"
+        count: int = 3
+        enabled: bool = False
+        note: str | None = None
+        required_value: float
+        generated: list[str] = Field(default_factory=make_values)
+        internal_rate: FlowRate = Field(
+            default=ChemUnitQuantity("0.2 ml/min"),
+            validation_alias=AliasChoices("flowRate", "flow_rate"),
+        )
+
+    class FakeMain(BaseModel):
+        main_rate: FlowRate = ChemUnitQuantity("0.3 ml/min")
+
+    class FakeProcess:
+        """Fake process."""
+
+    return ProtocolService(
+        project_dir=tmp_path,
+        processes={"fake": FakeProcess},
+        configs={"fake": FakeConfig},
+        main_parameter_class=FakeMain,
+    )
+
+
+def test_list_processes_serializes_typed_defaults(tmp_path):
+    schema = _schema_service(tmp_path).list_processes()[0]["config_schema"]
+    properties = schema["properties"]
+
+    assert properties["rate"]["default"] == "0.1 milliliter / minute"
+    assert properties["label"]["default"] == "pump"
+    assert properties["count"]["default"] == 3
+    assert properties["enabled"]["default"] is False
+    assert properties["note"]["default"] is None
+    assert "default" not in properties["required_value"]
+
+
+def test_schema_generation_skips_default_factories(tmp_path):
+    factory_calls = []
+    schema = _schema_service(tmp_path, factory_calls).list_processes()[0][
+        "config_schema"
+    ]
+
+    assert factory_calls == []
+    assert "default" not in schema["properties"]["generated"]
+
+
+def test_schema_generation_uses_validation_alias(tmp_path):
+    schema = _schema_service(tmp_path).list_processes()[0]["config_schema"]
+
+    assert schema["properties"]["flowRate"]["default"] == ("0.2 milliliter / minute")
+
+
+def test_get_process_schema_serializes_config_and_main_defaults(tmp_path):
+    result = _schema_service(tmp_path).get_process_schema("fake")
+
+    assert result["config_schema"]["properties"]["rate"]["default"] == (
+        "0.1 milliliter / minute"
+    )
+    assert (
+        result["main_parameter_schema"]["properties"]["main_rate"]["default"]
+        == "0.3 milliliter / minute"
+    )
+
+
+def test_schema_generation_suppresses_non_serializable_default_warning(tmp_path):
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        service = _schema_service(tmp_path)
+        service.list_processes()
+        service.get_process_schema("fake")
+
+    assert not any(
+        isinstance(item.message, PydanticJsonSchemaWarning) for item in caught
     )
 
 
