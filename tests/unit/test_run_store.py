@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import threading
 
-import pytest
 
 from chemunited_workflow.api.run_store import RunState, RunStore
 from chemunited_workflow.models import WorkflowExecutionEvent
@@ -172,6 +171,7 @@ def test_lockfile_deleted_on_cancel(tmp_path):
 
 def test_lockfile_restores_running_state_on_startup(tmp_path):
     import json
+
     (tmp_path / "run.lock").write_text(
         json.dumps({"run_id": "stale_run", "state": "running"}),
         encoding="utf-8",
@@ -183,6 +183,7 @@ def test_lockfile_restores_running_state_on_startup(tmp_path):
 
 def test_set_project_dir_restores_lockfile(tmp_path):
     import json
+
     (tmp_path / "run.lock").write_text(
         json.dumps({"run_id": "stale_run", "state": "running"}),
         encoding="utf-8",

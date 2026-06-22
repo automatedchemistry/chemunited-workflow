@@ -43,7 +43,9 @@ def app(project):
 
     proc_dir = project["dirs"]["process_dir"]
     mod = _load_module(proc_dir / "my_process.py", "my_process_monitoring")
-    main_mod = _load_module(proc_dir / "main_parameters.py", "main_parameters_monitoring")
+    main_mod = _load_module(
+        proc_dir / "main_parameters.py", "main_parameters_monitoring"
+    )
 
     api = create_api()
     holder = api.dependency_overrides[get_project_holder]()

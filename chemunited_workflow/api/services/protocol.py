@@ -76,7 +76,7 @@ class ProtocolService:
             raise FileNotFoundError(f"Protocol '{filename}' not found.")
         return json.loads(path.read_text(encoding="utf-8"))
 
-    _INVALID_NAME_CHARS = re.compile(r'[/\\:?#*<>|]')
+    _INVALID_NAME_CHARS = re.compile(r"[/\\:?#*<>|]")
 
     def write_protocol(self, name: str, data: dict[str, Any]) -> str:
         """Validate all process configs, then write. Returns the new filename."""

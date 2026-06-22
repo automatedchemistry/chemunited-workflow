@@ -59,7 +59,7 @@ class MonitoringService:
                 continue
             results.append(
                 {
-                    "command": path[len(prefix):],
+                    "command": path[len(prefix) :],
                     "summary": get_op.get("summary", ""),
                     "parameters": get_op.get("parameters", []),
                 }
@@ -130,7 +130,9 @@ class MonitoringService:
         command: str,
         tail: int | None = None,
     ) -> list[dict[str, Any]]:
-        path = self._session_dir(session_id) / self._variable_filename(component, command)
+        path = self._session_dir(session_id) / self._variable_filename(
+            component, command
+        )
         if not path.exists():
             raise FileNotFoundError(
                 f"No profile for '{component}'/'{command}' in session '{session_id}'."

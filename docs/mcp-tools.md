@@ -1,6 +1,6 @@
 # MCP Tools
 
-When running in `--mcp` or `--mcp-http` mode, the following tools are exposed to the connected LLM agent:
+When running in `--mcp` (stdio) mode or with `--with-mcp` (HTTP endpoint embedded in the FastAPI server), the following tools are exposed to the connected LLM agent:
 
 | Tool | Description |
 |------|-------------|

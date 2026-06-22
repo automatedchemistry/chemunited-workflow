@@ -117,12 +117,16 @@ def test_monitoring_profile_route_accepts_simple_and_slash_commands(client, proj
     session_dir = project["tmp_path"] / "log" / "monitoring" / session_id
     session_dir.mkdir(parents=True)
     (session_dir / "pump__value.jsonl").write_text(
-        json.dumps({"tick": 0, "time": "2026-06-16T10:00:00", "value": 1, "error": None})
+        json.dumps(
+            {"tick": 0, "time": "2026-06-16T10:00:00", "value": 1, "error": None}
+        )
         + "\n",
         encoding="utf-8",
     )
     (session_dir / "pump__nested__value.jsonl").write_text(
-        json.dumps({"tick": 0, "time": "2026-06-16T10:00:00", "value": 2, "error": None})
+        json.dumps(
+            {"tick": 0, "time": "2026-06-16T10:00:00", "value": 2, "error": None}
+        )
         + "\n",
         encoding="utf-8",
     )

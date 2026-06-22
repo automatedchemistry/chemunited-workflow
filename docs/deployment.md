@@ -56,67 +56,68 @@ You can switch to a different project at any time, as long as no run is currentl
 
 > **CLI change (v0.0.1+):** The server is now a subcommand — use `chemunited-workflow serve [options]`. Running bare `chemunited-workflow` (no arguments) still starts the FastAPI server with default settings.
 
-## MCP server
+## FastAPI + MCP on the same port
 
-The MCP server is project-agnostic. It starts without a project and the LLM loads one at runtime by calling the `load_project` tool.
+Add `--with-mcp` to expose both the browser dashboard and the MCP streamable-HTTP endpoint from a single server process on a single port. Both share the same project state — loading a project via the dashboard makes it immediately visible to MCP tools and vice versa.
 
 ```bash
-# MCP server over stdio — expose workflows as tools to Claude or other agents
-chemunited-workflow serve --mcp
-
-# MCP server over streamable HTTP, exposed at http://127.0.0.1:3117/mcp
-chemunited-workflow serve --mcp-http --port 3117
+chemunited-workflow serve my_project/ --with-mcp
 ```
 
-## Windows tray launcher
+| Endpoint | Address |
+|---|---|
+| Dashboard / REST API | `http://127.0.0.1:3116/` |
+| MCP streamable HTTP | `http://127.0.0.1:3116/mcp` |
 
-Use `chemunited-workflow-tray` when you want the FastAPI app to run with a
-Windows system tray icon.
+Use `--mcp-path` to change the MCP endpoint path:
 
-```powershell
-# Install once
-pip install -e .
-
-# First launch with a terminal so any setup errors are visible
-chemunited-workflow-tray
-
-# Or launch silently with no terminal window kept open
-chemunited-workflow-tray --silent
+```bash
+chemunited-workflow serve my_project/ --with-mcp --mcp-path /chemunited-mcp
+# MCP endpoint: http://127.0.0.1:3116/chemunited-mcp
 ```
 
-By default, the launcher starts without a project loaded and opens
-`http://127.0.0.1:3116/` (the HTML dashboard) from the tray menu. To use a project or a different
-port:
+## System tray
 
-```powershell
-chemunited-workflow-tray --project-dir C:/path/to/my_project --port 3116
+Add `--tray` to run the server minimised to the Windows system tray. uvicorn starts in a background thread; the main thread runs the tray icon loop.
+
+```bash
+chemunited-workflow serve my_project/ --tray
 ```
 
-If a chemunited API is already running on the requested host and port, the tray
-command does not start another server. With `--project-dir`, it loads that
-project into the running API through `PUT /project/`; without `--project-dir`,
-it exits without changing anything.
+Add `--silent` to detach from the terminal so no console window stays open. The process calls `FreeConsole()` to release the console immediately after startup:
 
-If the silent launcher fails during startup, it writes details to
-`tray_launcher.log`.
+```bash
+chemunited-workflow serve my_project/ --tray --silent
+```
+
+`--silent` requires `--tray` and only has an effect on Windows.
 
 The tray menu provides:
 
-- **Open App**: opens the HTML dashboard (`/`) in the default browser.
+- **Open App**: opens the dashboard in the default browser.
 - **Status**: shows a notification that the server is running.
-- **Quit**: stops uvicorn and removes the tray icon.
+- **Quit**: stops the server and removes the tray icon.
 
-For development, the normal terminal CLI remains available:
+`--tray` is incompatible with `--reload`.
 
-```powershell
-chemunited-workflow serve examples/custom_project --port 3116
+## Full combination
+
+All flags are independent and compose freely:
+
+```bash
+chemunited-workflow serve my_project/ \
+  --advertise \
+  --advertise-name "Flow Synthesis Lab" \
+  --with-mcp \
+  --tray \
+  --silent
 ```
+
+This starts the dashboard and the MCP endpoint on the same port, advertises via mDNS, runs minimised to the tray, and leaves no terminal window open.
 
 ## MCP stdio
 
-The MCP server runs over **stdio** by default. It does not expose an HTTP
-address in this mode. Instead, the LLM client starts the server command and
-communicates through the process stdin/stdout streams:
+The MCP server runs over **stdio**. It does not expose an HTTP address in this mode. Instead, the LLM client starts the server command and communicates through the process stdin/stdout streams:
 
 ```json
 {
@@ -129,8 +130,7 @@ communicates through the process stdin/stdout streams:
 }
 ```
 
-If you want to pin to a specific virtual environment, point `command` at that
-environment's script:
+If you want to pin to a specific virtual environment, point `command` at that environment's script:
 
 ```json
 {
@@ -156,41 +156,7 @@ On Windows, assuming this repository is checked out at `D:\Projects\chemunited-w
 }
 ```
 
-## MCP HTTP
-
-Use streamable HTTP when your MCP client asks for a URL or when you want the
-server to run independently of the LLM client process:
-
-```bash
-chemunited-workflow serve --mcp-http --host 127.0.0.1 --port 3117
-```
-
-The MCP HTTP address is:
-
-```text
-http://127.0.0.1:3117/mcp
-```
-
-On Windows:
-
-```bash
-.venv\Scripts\chemunited-workflow.exe serve --mcp-http --port 3117
-```
-
-Use `--mcp-path` to change the endpoint path:
-
-```bash
-chemunited-workflow serve --mcp-http --port 3117 --mcp-path /chemunited-mcp
-```
-
-Then the address becomes `http://127.0.0.1:3117/chemunited-mcp`.
-
-MCP HTTP is separate from the FastAPI REST API. FastAPI uses
-`http://127.0.0.1:3116/docs`; MCP HTTP uses the MCP endpoint path, such as
-`http://127.0.0.1:3117/mcp`.
-
-> **Note:** Once connected, ask the LLM to call `load_project` with the path to
-> your project directory. All other tools return an error until a project is loaded.
+> **Note:** Once connected, ask the LLM to call `load_project` with the path to your project directory. All other tools return an error until a project is loaded.
 
 ---
 

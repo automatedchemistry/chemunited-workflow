@@ -37,7 +37,6 @@ discovery = ["zeroconf>=0.131"]
 
 [project.scripts]
 chemunited-workflow = "chemunited_workflow.cli:main"
-chemunited-workflow-tray = "chemunited_workflow.tray_launcher:main"
 
 [tool.setuptools.package-data]
 "chemunited_workflow.api" = ["templates/*.html", "static/*"]

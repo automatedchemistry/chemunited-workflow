@@ -22,7 +22,9 @@ def test_create_unique_ids():
 def test_update_latest_and_get():
     store = MonitoringStore()
     record = store.create()
-    store.update_latest(record.session_id, "pump::value", {"time": "t", "value": 1.0, "error": None})
+    store.update_latest(
+        record.session_id, "pump::value", {"time": "t", "value": 1.0, "error": None}
+    )
     fetched = store.get(record.session_id)
     assert fetched.latest["pump::value"]["value"] == 1.0
 

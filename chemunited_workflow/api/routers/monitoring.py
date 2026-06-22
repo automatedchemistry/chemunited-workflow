@@ -29,7 +29,8 @@ async def discover_component(
         raise HTTPException(status_code=404, detail=str(exc))
     except requests.exceptions.RequestException as exc:
         raise HTTPException(
-            status_code=502, detail=f"Device server unreachable or has no OpenAPI schema: {exc}"
+            status_code=502,
+            detail=f"Device server unreachable or has no OpenAPI schema: {exc}",
         )
 
 
@@ -84,7 +85,9 @@ async def get_session(
     """Return the state of a monitoring session."""
     session = svc.get_session(session_id)
     if session is None:
-        raise HTTPException(status_code=404, detail=f"Session '{session_id}' not found.")
+        raise HTTPException(
+            status_code=404, detail=f"Session '{session_id}' not found."
+        )
     return session
 
 

@@ -20,11 +20,20 @@ from .routers.ui import router as ui_router
 _STATIC_DIR = Path(__file__).parent / "static"
 
 
-def create_api() -> FastAPI:
+def create_api(
+    *,
+    with_mcp: bool = False,
+    mcp_path: str = "/mcp",
+    host: str = "127.0.0.1",
+    port: int = 3116,
+) -> FastAPI:
     """Create and return a configured FastAPI application.
 
     The server starts with no project loaded. Use ``PUT /project`` to load a
     project directory at runtime.
+
+    Pass ``with_mcp=True`` to also mount an MCP streamable-HTTP endpoint at
+    ``mcp_path`` (default ``/mcp``) sharing the same ``ProjectHolder``.
     """
     holder = ProjectHolder()
 
@@ -43,5 +52,16 @@ def create_api() -> FastAPI:
     app.include_router(components_router)
     app.include_router(logs_router)
     app.include_router(monitoring_router)
+
+    if with_mcp:
+        from chemunited_workflow.mcp import create_mcp_server
+
+        mcp = create_mcp_server(
+            host=host,
+            port=port,
+            streamable_http_path=mcp_path,
+            holder=holder,
+        )
+        app.mount(mcp_path, mcp.streamable_http_app())
 
     return app

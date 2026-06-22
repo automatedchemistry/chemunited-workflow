@@ -61,7 +61,9 @@ def test_discover_unknown_component_raises_keyerror(svc):
 
 
 def test_discover_propagates_request_exception(svc):
-    with patch(f"{_MODULE}.get", side_effect=requests.exceptions.ConnectionError("refused")):
+    with patch(
+        f"{_MODULE}.get", side_effect=requests.exceptions.ConnectionError("refused")
+    ):
         with pytest.raises(requests.exceptions.ConnectionError):
             svc.discover("pump")
 
@@ -213,9 +215,18 @@ def test_stop_session_unknown_returns_false(svc):
 
 def test_list_and_get_session(svc):
     svc.write_config(
-        {"sample_time": 1.0, "request_timeout": 1.0, "variables": [{"component": "pump", "command": "value"}]}
+        {
+            "sample_time": 1.0,
+            "request_timeout": 1.0,
+            "variables": [{"component": "pump", "command": "value"}],
+        }
     )
-    with patch(f"{_MODULE}.get", return_value=MagicMock(raise_for_status=MagicMock(), json=MagicMock(return_value=1))):
+    with patch(
+        f"{_MODULE}.get",
+        return_value=MagicMock(
+            raise_for_status=MagicMock(), json=MagicMock(return_value=1)
+        ),
+    ):
         session_id = svc.start_session()
         svc.stop_session(session_id)
 

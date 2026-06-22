@@ -32,7 +32,7 @@ class WorkflowNodeSpec(BaseModel):
     description: str = ""
     position: tuple[float, float] | None = None
 
-    @model_validator(mode='after')
+    @model_validator(mode="after")
     def ensure_not_empty_label(self) -> Self:
         if not self.label:
             self.label = self.node_id
