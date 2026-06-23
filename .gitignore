@@ -218,8 +218,10 @@ instructions
 
 # pytest
 pytest-cache*
+pytest-tmp-*
 .pre-commit-cache*
 
 # pycharm
 .idea
 
+.web-chemunited

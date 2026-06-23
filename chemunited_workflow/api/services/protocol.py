@@ -132,7 +132,10 @@ class ProtocolService:
                 "Avoid: / \\ : ? # * < > |"
             )
         if "main_parameter" not in data:
-            data = {"main_parameter": self._main_parameter_class().model_dump(mode="json"), **data}
+            data = {
+                "main_parameter": self._main_parameter_class().model_dump(mode="json"),
+                **data,
+            }
         self._validate_protocol(data)
         timestamp = datetime.now().strftime("%Y-%m-%dT%H-%M-%S")
         filename = f"{name}_{timestamp}.json"

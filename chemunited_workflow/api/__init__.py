@@ -19,6 +19,7 @@ from .routers.protocols import write_router as protocols_write_router
 from .routers.ui import router as ui_router
 
 _STATIC_DIR = Path(__file__).parent / "static"
+_WEB_DIR = Path(__file__).parent.parent / "web"
 
 
 def create_api(
@@ -78,5 +79,8 @@ def create_api(
 
     if mcp_sub_app is not None:
         app.mount("/mcp", mcp_sub_app)
+
+    if _WEB_DIR.is_dir():
+        app.mount("/", StaticFiles(directory=_WEB_DIR), name="web")
 
     return app

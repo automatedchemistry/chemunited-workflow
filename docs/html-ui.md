@@ -2,11 +2,11 @@
 
 > Requires the FastAPI server — see [Deployment Modes](deployment.md#fastapi-server).
 
-When the FastAPI server is running, open `http://127.0.0.1:3116/` to access the browser-based dashboard. No separate server or build step is required — the templates are served directly from the FastAPI app using Jinja2 and [HTMX](https://htmx.org/).
+When the FastAPI server is running, open `http://127.0.0.1:3116/` to access the browser-based dashboard. The main UI is a Vue single-page application whose built assets ship with the package — no separate build step is required.
 
 | Page | URL | Description |
 |------|-----|-------------|
-| Dashboard | `/` | Active run status, recent protocols, quick-start links |
+| Dashboard | `/` | Vue SPA — active run status, protocols, quick-start links |
 | Run Control | `/run-control` | Start/cancel runs, live event feed via SSE |
 | Report | `/report` | Per-node outcome table for the current or last run |
 | Protocols | `/protocols-ui` | List and delete saved protocol files |
@@ -15,7 +15,21 @@ When the FastAPI server is running, open `http://127.0.0.1:3116/` to access the 
 
 ## Customising the UI
 
-Each project can override any page with its own Jinja2 template. The server checks `{project_dir}/ui/templates/` first; if a template is not found there it falls back to the built-in templates.
+### Main dashboard (Vue SPA)
+
+The root `/` is served from the pre-built assets in `chemunited_workflow/web/`. To modify the Vue source, edit the files in `.web-chemunited/src/` and rebuild:
+
+```bash
+cd .web-chemunited
+npm install      # first time only
+npm run build
+```
+
+Built assets are written to `chemunited_workflow/web/` automatically (configured in `vite.config.ts`).
+
+### Secondary pages (Jinja2)
+
+The remaining pages (`/run-control`, `/report`, `/protocols-ui`, `/logs-ui`, `/devices`) are server-rendered with Jinja2. Each project can override any of these with its own template. The server checks `{project_dir}/ui/templates/` first; if a template is not found there it falls back to the built-in templates.
 
 Use the `scaffold-ui` command to copy the built-in templates into your project as a starting point:
 
@@ -28,7 +42,7 @@ This creates:
 ```
 my_project/
 └── ui/
-    ├── templates/       # copies of all built-in .html files — edit freely
+    ├── templates/       # copies of built-in secondary .html files — edit freely
     └── static/          # copy of built-in.css — add custom.css here
 ```
 

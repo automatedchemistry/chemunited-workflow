@@ -256,6 +256,26 @@ def test_cancel_when_no_run(client):
     assert r.status_code == 404
 
 
+def test_get_active_run_when_idle(client):
+    r = client.get("/run/active")
+    assert r.status_code == 200
+    assert r.json() == {"active_run_id": None}
+
+
+def test_get_active_run_while_running(app):
+    from chemunited_workflow.api.dependencies import get_project_holder
+
+    holder = app.dependency_overrides[get_project_holder]()
+    run_id = holder.run_store.try_start("run_001.json")
+    assert run_id is not None
+
+    with TestClient(app) as local_client:
+        r = local_client.get("/run/active")
+
+    assert r.status_code == 200
+    assert r.json() == {"active_run_id": run_id}
+
+
 def test_start_run_while_active_returns_409(client):
     r1 = client.post("/run/", json={"protocol": "run_001.json"})
     assert r1.status_code == 202

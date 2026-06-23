@@ -8,7 +8,7 @@ from pathlib import Path
 from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.responses import HTMLResponse, Response
+from fastapi.responses import FileResponse, HTMLResponse, Response
 from fastapi.templating import Jinja2Templates
 
 from typing import Any
@@ -17,6 +17,8 @@ from ..dependencies import get_project_holder, get_templates
 from ..project_holder import ProjectHolder
 
 router = APIRouter(include_in_schema=False)
+
+_WEB_INDEX = Path(__file__).parent.parent.parent / "web" / "index.html"
 
 
 # ── Page helpers ──────────────────────────────────────────────────────────────
@@ -36,23 +38,8 @@ def _safe_list_logs(holder: ProjectHolder) -> list[dict[str, Any]]:
 
 
 @router.get("/")
-async def dashboard(
-    request: Request,
-    holder: ProjectHolder = Depends(get_project_holder),
-    templates: Jinja2Templates = Depends(get_templates),
-) -> HTMLResponse:
-    protocols = _safe_list_protocols(holder)
-    log_files = _safe_list_logs(holder)
-    return templates.TemplateResponse(
-        request,
-        "index.html",
-        {
-            "project_loaded": holder.is_loaded(),
-            "active_run_id": holder.active_run_id(),
-            "protocols": protocols[-5:][::-1],
-            "log_files": log_files[-3:][::-1],
-        },
-    )
+async def dashboard() -> FileResponse:
+    return FileResponse(_WEB_INDEX)
 
 
 @router.get("/run-control")

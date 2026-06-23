@@ -484,7 +484,7 @@ def scaffold_ui(project_dir: Path, force: bool) -> None:
     created: list[Path] = []
 
     for src in _BUILTIN_TEMPLATES_DIR.iterdir():
-        if src.is_file():
+        if src.is_file() and src.name != "index.html":
             dst = templates_dest / src.name
             shutil.copy2(src, dst)
             created.append(dst)
@@ -498,7 +498,9 @@ def scaffold_ui(project_dir: Path, force: bool) -> None:
     click.echo(f"Scaffolded UI into {project_dir / 'ui'}/")
     for p in created:
         click.echo(f"  created: {p.relative_to(project_dir)}")
-    click.echo("\nEdit the templates in ui/templates/ to customise your experiment UI.")
+    click.echo(
+        "\nEdit the templates in ui/templates/ to customise the secondary UI pages."
+    )
 
 
 if __name__ == "__main__":

@@ -10,7 +10,8 @@ from collections.abc import AsyncIterator
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 
-from ..dependencies import get_runner_service
+from ..dependencies import get_project_holder, get_runner_service
+from ..project_holder import ProjectHolder
 from ..run_store import RunState
 from ..schemas import RunRequest, RunStatus
 from ..services.runner import RunnerService
@@ -18,6 +19,14 @@ from ..services.runner import RunnerService
 router = APIRouter(prefix="/run", tags=["run"])
 STREAM_POLL_INTERVAL_SECONDS = 0.1
 STREAM_HEARTBEAT_INTERVAL_SECONDS = 5.0
+
+
+@router.get("/active")
+async def get_active_run(
+    holder: ProjectHolder = Depends(get_project_holder),
+):
+    """Return the active run ID without consuming queued execution events."""
+    return {"active_run_id": holder.active_run_id()}
 
 
 @router.post("/", status_code=202)
