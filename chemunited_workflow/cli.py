@@ -174,12 +174,6 @@ def main(ctx: click.Context) -> None:
     help="Bind port. Defaults to 3116 (FastAPI) or 3117 (MCP stdio).",
 )
 @click.option(
-    "--mcp-path",
-    default="/mcp",
-    show_default=True,
-    help="HTTP path for the MCP endpoint (used with --with-mcp).",
-)
-@click.option(
     "--reload",
     is_flag=True,
     default=False,
@@ -227,7 +221,6 @@ def serve(
     mode: str,
     host: str,
     port: int | None,
-    mcp_path: str,
     reload: bool,
     advertise: bool,
     advertise_name: str | None,
@@ -252,8 +245,8 @@ def serve(
     \b
     FastAPI + MCP on the same port:
       chemunited-workflow serve my_project/ --with-mcp
-      Dashboard:   http://127.0.0.1:3116/
-      MCP:         http://127.0.0.1:3116/mcp
+      Dashboard:  http://127.0.0.1:3116/
+      MCP:        http://127.0.0.1:3116/mcp
 
     \b
     LAN advertisement -- expose the dashboard to other machines on the network:
@@ -285,7 +278,6 @@ def serve(
         server = create_mcp_server(
             host=host,
             port=resolved_port,
-            streamable_http_path=mcp_path,
         )
         server.run()
         return
@@ -337,7 +329,6 @@ def serve(
 
     app = create_api(
         with_mcp=with_mcp,
-        mcp_path=mcp_path,
         host=host,
         port=resolved_port,
     )

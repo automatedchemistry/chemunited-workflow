@@ -1,5 +1,6 @@
 """chemunited_workflow.api — FastAPI application factory."""
 
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -23,7 +24,6 @@ _STATIC_DIR = Path(__file__).parent / "static"
 def create_api(
     *,
     with_mcp: bool = False,
-    mcp_path: str = "/mcp",
     host: str = "127.0.0.1",
     port: int = 3116,
 ) -> FastAPI:
@@ -33,11 +33,34 @@ def create_api(
     project directory at runtime.
 
     Pass ``with_mcp=True`` to also mount an MCP streamable-HTTP endpoint at
-    ``mcp_path`` (default ``/mcp``) sharing the same ``ProjectHolder``.
+    ``/mcp`` sharing the same ``ProjectHolder``.
     """
     holder = ProjectHolder()
 
-    app = FastAPI(title="chemunited API")
+    mcp_session_manager = None
+    mcp_sub_app = None
+
+    if with_mcp:
+        from chemunited_workflow.mcp import create_mcp_server
+
+        mcp = create_mcp_server(
+            host=host,
+            port=port,
+            streamable_http_path="/",
+            holder=holder,
+        )
+        mcp_sub_app = mcp.streamable_http_app()
+        mcp_session_manager = mcp.session_manager
+
+    @asynccontextmanager
+    async def _lifespan(app: FastAPI):
+        if mcp_session_manager is not None:
+            async with mcp_session_manager.run():
+                yield
+        else:
+            yield
+
+    app = FastAPI(title="chemunited API", lifespan=_lifespan)
 
     app.mount("/static", StaticFiles(directory=_STATIC_DIR), name="static")
 
@@ -53,15 +76,7 @@ def create_api(
     app.include_router(logs_router)
     app.include_router(monitoring_router)
 
-    if with_mcp:
-        from chemunited_workflow.mcp import create_mcp_server
-
-        mcp = create_mcp_server(
-            host=host,
-            port=port,
-            streamable_http_path=mcp_path,
-            holder=holder,
-        )
-        app.mount(mcp_path, mcp.streamable_http_app())
+    if mcp_sub_app is not None:
+        app.mount("/mcp", mcp_sub_app)
 
     return app

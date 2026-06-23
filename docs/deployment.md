@@ -69,13 +69,6 @@ chemunited-workflow serve my_project/ --with-mcp
 | Dashboard / REST API | `http://127.0.0.1:3116/` |
 | MCP streamable HTTP | `http://127.0.0.1:3116/mcp` |
 
-Use `--mcp-path` to change the MCP endpoint path:
-
-```bash
-chemunited-workflow serve my_project/ --with-mcp --mcp-path /chemunited-mcp
-# MCP endpoint: http://127.0.0.1:3116/chemunited-mcp
-```
-
 ## System tray
 
 Add `--tray` to run the server minimised to the Windows system tray. uvicorn starts in a background thread; the main thread runs the tray icon loop.
