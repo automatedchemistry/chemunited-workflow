@@ -350,3 +350,19 @@ def test_ping_two_valid_devices(svc):
     assert "pump" in components
     assert "valve" in components
     assert len(results) == 2
+
+
+# ── write_protocol main_parameter injection ───────────────────────────────────
+
+
+def test_write_protocol_injects_main_parameter_when_absent(svc, tmp_path):
+    filename = svc.write_protocol("test", {})
+    data = json.loads((tmp_path / "protocols_historic" / filename).read_text())
+    assert "main_parameter" in data
+    assert data["main_parameter"] == {"x": 1.0}
+
+
+def test_write_protocol_preserves_explicit_main_parameter(svc, tmp_path):
+    filename = svc.write_protocol("test", {"main_parameter": {"x": 42.0}})
+    data = json.loads((tmp_path / "protocols_historic" / filename).read_text())
+    assert data["main_parameter"] == {"x": 42.0}
