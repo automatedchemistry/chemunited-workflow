@@ -56,6 +56,8 @@ class BaseClient:
     def __init__(self, url: str | AnyHttpUrl, *, dry_run: bool = False) -> None:
         self.base_url = str(url).rstrip("/")
         self._dry_run = dry_run
+        self._last_log_msg: str | None = None
+        self._log_count: int = 0
         self._session = self._make_session()
 
     def _make_session(self) -> requests.Session:
@@ -130,8 +132,8 @@ class BaseClient:
             resp_preview=resp_preview,
         )
 
-    @staticmethod
     def _log(
+        self,
         *,
         label: str,
         method: str,
@@ -144,19 +146,24 @@ class BaseClient:
         elapsed_ms: float,
         resp_preview: str | None,
     ) -> None:
-        logger.debug(
-            "{}: {} {} | Request: {} {} | Response: {} ({}) {}B in {:.0f}ms | Body: {}",
-            label,
-            method,
-            url,
-            req_body or "<no body>",
-            req_content_type or "<none>",
-            status_code,
-            resp_content_type or "<none>",
-            resp_size,
-            elapsed_ms,
-            resp_preview or "<empty>",
+        msg = (
+            f"{label}: {method} {url}"
+            f" | Request: {req_body or '<no body>'} {req_content_type or '<none>'}"
+            f" | Response: {status_code} ({resp_content_type or '<none>'})"
+            f" {resp_size}B in {elapsed_ms:.0f}ms"
+            f" | Body: {resp_preview or '<empty>'}"
         )
+
+        if msg == self._last_log_msg:
+            self._log_count += 1
+            return
+
+        if self._log_count > 1:
+            logger.debug("(last message repeated {} times)", self._log_count)
+
+        logger.debug(msg)
+        self._last_log_msg = msg
+        self._log_count = 1
 
     def _raise_for_status(self, response: requests.Response, *args, **kwargs) -> None:
         response.raise_for_status()
