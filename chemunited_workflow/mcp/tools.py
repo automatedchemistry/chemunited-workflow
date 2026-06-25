@@ -320,7 +320,8 @@ def register_tools(mcp: FastMCP, holder: ProjectHolder) -> None:
         """
         if not holder.is_loaded():
             return [{"error": _NO_PROJECT}]
-        assert holder.project_dir is not None
+        if holder.project_dir is None:
+            return [{"error": _NO_PROJECT}]
         pool_dir = holder.project_dir / "log" / "pool"
         if not pool_dir.exists():
             return []

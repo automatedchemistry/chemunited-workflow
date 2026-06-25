@@ -4,7 +4,7 @@ import base64
 import ipaddress
 import os
 import re
-import subprocess
+import subprocess  # nosec B404
 import sys
 import threading
 import webbrowser
@@ -290,7 +290,7 @@ def serve(
     resolved_port = port if port is not None else 3116
 
     if advertise and host == "127.0.0.1":
-        host = "0.0.0.0"
+        host = "0.0.0.0"  # nosec B104
 
     app = create_api(
         with_mcp=with_mcp,
