@@ -80,11 +80,12 @@ async def get_run_report(svc: RunnerService = Depends(get_runner_service)):
 
     Returns one `WorkflowResult` per process step in execution order,
     containing node states, results, runtimes, and any errors. Returns
-    HTTP 202 if the run has not finished yet.
+    HTTP 202 if the run has not finished yet. Returns null if no run
+    has ever been recorded.
     """
     rec = svc._run_store.get()
     if rec is None:
-        raise HTTPException(status_code=404, detail="No run is active or recorded.")
+        return None
     if rec.state == RunState.RUNNING:
         raise HTTPException(status_code=202, detail="Run has not finished yet.")
     return {

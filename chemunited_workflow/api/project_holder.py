@@ -5,8 +5,6 @@ from __future__ import annotations
 import threading
 from pathlib import Path
 
-from fastapi.templating import Jinja2Templates
-
 from chemunited_workflow.project_loader import ProjectModules
 
 from .monitoring_store import MonitoringStore
@@ -14,18 +12,6 @@ from .run_store import RunStore
 from .services.monitoring import MonitoringService
 from .services.protocol import ProtocolService
 from .services.runner import RunnerService
-
-_BUILTIN_TEMPLATES_DIR = Path(__file__).parent / "templates"
-
-
-def _make_templates(project_dir: Path | None) -> Jinja2Templates:
-    dirs: list[Path] = []
-    if project_dir is not None:
-        custom = project_dir / "ui" / "templates"
-        if custom.is_dir():
-            dirs.append(custom)
-    dirs.append(_BUILTIN_TEMPLATES_DIR)
-    return Jinja2Templates(directory=dirs)
 
 
 class ProjectHolder:
@@ -44,7 +30,6 @@ class ProjectHolder:
         self._protocol_service: ProtocolService | None = None
         self._runner_service: RunnerService | None = None
         self._monitoring_service: MonitoringService | None = None
-        self._jinja2_templates: Jinja2Templates = _make_templates(None)
 
     # ── Read accessors ────────────────────────────────────────────────────────
 
@@ -71,11 +56,6 @@ class ProjectHolder:
     @property
     def run_store(self) -> RunStore:
         return self._run_store
-
-    @property
-    def jinja2_templates(self) -> Jinja2Templates:
-        with self._lock:
-            return self._jinja2_templates
 
     def is_loaded(self) -> bool:
         with self._lock:
@@ -108,11 +88,9 @@ class ProjectHolder:
             project_dir=modules.project_dir,
             store=self._monitoring_store,
         )
-        new_templates = _make_templates(modules.project_dir)
         self._run_store.set_project_dir(modules.project_dir)
         with self._lock:
             self._project_dir = modules.project_dir
             self._protocol_service = new_protocol
             self._runner_service = new_runner
             self._monitoring_service = new_monitoring
-            self._jinja2_templates = new_templates

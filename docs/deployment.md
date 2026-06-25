@@ -108,49 +108,6 @@ chemunited-workflow serve my_project/ \
 
 This starts the dashboard and the MCP endpoint on the same port, advertises via mDNS, runs minimised to the tray, and leaves no terminal window open.
 
-## MCP stdio
-
-The MCP server runs over **stdio**. It does not expose an HTTP address in this mode. Instead, the LLM client starts the server command and communicates through the process stdin/stdout streams:
-
-```json
-{
-  "mcpServers": {
-    "chemunited-workflow": {
-      "command": "chemunited-workflow",
-      "args": ["serve", "--mcp"]
-    }
-  }
-}
-```
-
-If you want to pin to a specific virtual environment, point `command` at that environment's script:
-
-```json
-{
-  "mcpServers": {
-    "chemunited-workflow": {
-      "command": "/absolute/path/to/.venv/bin/chemunited-workflow",
-      "args": ["serve", "--mcp"]
-    }
-  }
-}
-```
-
-On Windows, assuming this repository is checked out at `D:\Projects\chemunited-workflow`:
-
-```json
-{
-  "mcpServers": {
-    "chemunited-workflow": {
-      "command": "D:\\Projects\\chemunited-workflow\\.venv\\Scripts\\chemunited-workflow.exe",
-      "args": ["serve", "--mcp"]
-    }
-  }
-}
-```
-
-> **Note:** Once connected, ask the LLM to call `load_project` with the path to your project directory. All other tools return an error until a project is loaded.
-
 ---
 
 For available HTTP endpoints see [API Reference](api-reference.md). For MCP tool definitions see [MCP Tools](mcp-tools.md).

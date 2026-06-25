@@ -2,7 +2,7 @@
 
 import asyncio
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 
 from ..dependencies import get_protocol_service
 from ..schemas import ComponentStatus
@@ -18,6 +18,19 @@ async def ping_components(
 ):
     """Verify that all device URLs in ``associations.json`` are reachable."""
     return await asyncio.to_thread(svc.ping_components, timeout)
+
+
+@router.get("/ping/{component}", response_model=ComponentStatus)
+async def ping_component(
+    component: str,
+    timeout: float = 2.0,
+    svc: ProtocolService = Depends(get_protocol_service),
+):
+    """Verify that a single configured device URL is reachable."""
+    try:
+        return await asyncio.to_thread(svc.ping_component, component, timeout)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
 @router.get("/")

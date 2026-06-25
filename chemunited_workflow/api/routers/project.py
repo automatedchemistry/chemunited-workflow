@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import Response
 
 from chemunited_workflow.project_loader import ProjectLoadError, load_project
 
@@ -51,3 +52,14 @@ async def put_project(
 
     holder.load(modules)
     return ProjectOut(project_dir=str(holder.project_dir))
+
+
+@router.get("/platform-svg", include_in_schema=False)
+async def platform_svg(holder: ProjectHolder = Depends(get_project_holder)) -> Response:
+    pd = holder.project_dir
+    if pd is None:
+        raise HTTPException(status_code=404, detail="No project loaded.")
+    svg_path = pd / "draw" / "platform.svg"
+    if not svg_path.is_file():
+        raise HTTPException(status_code=404, detail="platform.svg not found.")
+    return Response(content=svg_path.read_text(encoding="utf-8"), media_type="image/svg+xml")

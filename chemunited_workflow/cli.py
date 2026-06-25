@@ -4,7 +4,6 @@ import base64
 import ipaddress
 import os
 import re
-import shutil
 import subprocess
 import sys
 import threading
@@ -16,8 +15,6 @@ import click
 
 from chemunited_workflow.project_loader import ProjectLoadError, load_project
 
-_BUILTIN_TEMPLATES_DIR = Path(__file__).parent / "api" / "templates"
-_BUILTIN_STATIC_DIR = Path(__file__).parent / "api" / "static"
 _DEFAULT_ICON_PATH = Path(__file__).parent / "chemunited.svg"
 
 
@@ -126,16 +123,11 @@ def main(ctx: click.Context) -> None:
 
     Executes protocol graphs where each node calls a device HTTP endpoint and
     the result routes execution through the graph (branches, loopbacks, parallel
-    steps). Two server modes are available:
-
-    \b
-      serve            FastAPI REST API + browser dashboard (default)
-      serve --mcp      MCP server over stdio for LLM agents (Claude, etc.)
+    steps).
 
     \b
     Quick start:
       chemunited-workflow serve my_project/
-      chemunited-workflow scaffold-ui --project-dir my_project/
 
     Run without a subcommand to start the FastAPI server with default settings
     (equivalent to 'serve').
@@ -152,16 +144,6 @@ def main(ctx: click.Context) -> None:
     type=click.Path(exists=True, file_okay=False, resolve_path=True, path_type=Path),
 )
 @click.option(
-    "--fastapi",
-    "mode",
-    flag_value="fastapi",
-    default=True,
-    help="Start the FastAPI server (default).",
-)
-@click.option(
-    "--mcp", "mode", flag_value="mcp", help="Start the MCP server over stdio."
-)
-@click.option(
     "--host",
     default="127.0.0.1",
     show_default=True,
@@ -171,7 +153,7 @@ def main(ctx: click.Context) -> None:
     "--port",
     default=None,
     type=int,
-    help="Bind port. Defaults to 3116 (FastAPI) or 3117 (MCP stdio).",
+    help="Bind port. Defaults to 3116.",
 )
 @click.option(
     "--reload",
@@ -218,7 +200,6 @@ def main(ctx: click.Context) -> None:
 )
 def serve(
     project_dir: Path | None,
-    mode: str,
     host: str,
     port: int | None,
     reload: bool,
@@ -228,14 +209,13 @@ def serve(
     use_tray: bool,
     silent: bool,
 ) -> None:
-    """Start the server (FastAPI dashboard or MCP stdio).
+    """Start the FastAPI server (browser dashboard + REST API).
 
     PROJECT_DIR pre-loads a project at startup. Without it the server starts
-    empty; load a project later via PUT /project (FastAPI) or the load_project
-    tool (MCP).
+    empty; load a project later via PUT /project or the load_project MCP tool.
 
     \b
-    FastAPI mode (default) -- browser dashboard + REST API:
+    Start the server:
       chemunited-workflow serve my_project/
       chemunited-workflow serve my_project/ --port 8080
       chemunited-workflow serve --reload          # dev mode, no project
@@ -243,7 +223,7 @@ def serve(
       Swagger UI:  http://127.0.0.1:3116/docs
 
     \b
-    FastAPI + MCP on the same port:
+    With MCP streamable-HTTP endpoint on the same port:
       chemunited-workflow serve my_project/ --with-mcp
       Dashboard:  http://127.0.0.1:3116/
       MCP:        http://127.0.0.1:3116/mcp
@@ -266,22 +246,7 @@ def serve(
     \b
     Full combination:
       chemunited-workflow serve my_project/ --advertise --advertise-name "Flow Synthesis Lab" --with-mcp --tray --silent
-
-    \b
-    MCP stdio -- expose workflows as tools to Claude or other LLM agents:
-      chemunited-workflow serve --mcp
     """
-    if mode == "mcp":
-        from chemunited_workflow.mcp import create_mcp_server
-
-        resolved_port = port if port is not None else 3117
-        server = create_mcp_server(
-            host=host,
-            port=resolved_port,
-        )
-        server.run()
-        return
-
     # --- FastAPI mode -------------------------------------------------------
     try:
         import uvicorn
@@ -445,62 +410,6 @@ def serve(
             if zc is not None:
                 zc.unregister_service(zc_info)
                 zc.close()
-
-
-@main.command("scaffold-ui")
-@click.option(
-    "--project-dir",
-    "project_dir",
-    default=".",
-    type=click.Path(file_okay=False, resolve_path=True, path_type=Path),
-    show_default=True,
-    help="Target project directory.",
-)
-@click.option(
-    "--force",
-    is_flag=True,
-    default=False,
-    help="Overwrite existing ui/ files without prompting.",
-)
-def scaffold_ui(project_dir: Path, force: bool) -> None:
-    """Copy built-in UI templates into a project for customisation.
-
-    Creates <project-dir>/ui/templates/ and <project-dir>/ui/static/ and
-    populates them with the built-in fallback files as a starting point.
-    Edit the copies to customise the UI for your experiment without changing
-    any shared files.
-    """
-    templates_dest = project_dir / "ui" / "templates"
-    static_dest = project_dir / "ui" / "static"
-
-    if templates_dest.exists() and not force:
-        raise click.UsageError(
-            f"{templates_dest} already exists. Use --force to overwrite."
-        )
-
-    templates_dest.mkdir(parents=True, exist_ok=True)
-    static_dest.mkdir(parents=True, exist_ok=True)
-
-    created: list[Path] = []
-
-    for src in _BUILTIN_TEMPLATES_DIR.iterdir():
-        if src.is_file() and src.name != "index.html":
-            dst = templates_dest / src.name
-            shutil.copy2(src, dst)
-            created.append(dst)
-
-    for src in _BUILTIN_STATIC_DIR.iterdir():
-        if src.is_file():
-            dst = static_dest / src.name
-            shutil.copy2(src, dst)
-            created.append(dst)
-
-    click.echo(f"Scaffolded UI into {project_dir / 'ui'}/")
-    for p in created:
-        click.echo(f"  created: {p.relative_to(project_dir)}")
-    click.echo(
-        "\nEdit the templates in ui/templates/ to customise the secondary UI pages."
-    )
 
 
 if __name__ == "__main__":

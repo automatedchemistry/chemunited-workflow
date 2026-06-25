@@ -5,33 +5,18 @@ from __future__ import annotations
 import asyncio
 import mimetypes
 from pathlib import Path
-from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse, Response
-from fastapi.templating import Jinja2Templates
 
 from typing import Any
 
-from ..dependencies import get_project_holder, get_templates
+from ..dependencies import get_project_holder
 from ..project_holder import ProjectHolder
 
 router = APIRouter(include_in_schema=False)
 
 _WEB_INDEX = Path(__file__).parent.parent.parent / "web" / "index.html"
-
-
-# ── Page helpers ──────────────────────────────────────────────────────────────
-
-
-def _safe_list_protocols(holder: ProjectHolder) -> list[dict[str, Any]]:
-    svc = holder.protocol_service
-    return svc.list_protocols() if svc else []
-
-
-def _safe_list_logs(holder: ProjectHolder) -> list[dict[str, Any]]:
-    svc = holder.protocol_service
-    return svc.list_logs() if svc else []
 
 
 # ── Pages ─────────────────────────────────────────────────────────────────────
@@ -43,157 +28,15 @@ async def dashboard() -> FileResponse:
 
 
 @router.get("/run-control")
-async def run_control(
-    request: Request,
-    protocol: str = "",
-    holder: ProjectHolder = Depends(get_project_holder),
-    templates: Jinja2Templates = Depends(get_templates),
-) -> HTMLResponse:
-    protocols = _safe_list_protocols(holder)
-    return templates.TemplateResponse(
-        request,
-        "run_control.html",
-        {
-            "project_loaded": holder.is_loaded(),
-            "protocols": protocols,
-            "preselect": protocol,
-        },
-    )
-
-
-@router.get("/report")
-async def report(
-    request: Request,
-    holder: ProjectHolder = Depends(get_project_holder),
-    templates: Jinja2Templates = Depends(get_templates),
-) -> HTMLResponse:
-    store = holder.run_store
-    rec = store.get()
-    if rec is None:
-        raise HTTPException(status_code=404, detail="No run recorded.")
-    results = [r.model_dump() for r in rec.results]
-    return templates.TemplateResponse(
-        request,
-        "report.html",
-        {
-            "run_id": rec.run_id,
-            "state": rec.state.value,
-            "results": results,
-        },
-    )
-
-
-@router.get("/protocols-ui")
-async def protocols_ui(
-    request: Request,
-    holder: ProjectHolder = Depends(get_project_holder),
-    templates: Jinja2Templates = Depends(get_templates),
-) -> HTMLResponse:
-    protocols = _safe_list_protocols(holder)
-    return templates.TemplateResponse(
-        request,
-        "protocols_ui.html",
-        {
-            "project_loaded": holder.is_loaded(),
-            "protocols": protocols,
-        },
-    )
-
-
-@router.get("/logs-ui")
-async def logs_ui(
-    request: Request,
-    file: str = "",
-    holder: ProjectHolder = Depends(get_project_holder),
-    templates: Jinja2Templates = Depends(get_templates),
-) -> HTMLResponse:
-    svc = holder.protocol_service
-    log_files = svc.list_logs() if svc else []
-    log_content: str | None = None
-    selected_log: str | None = file or None
-    if selected_log and svc:
-        try:
-            log_content = svc.read_log(selected_log, tail=200)
-        except FileNotFoundError:
-            selected_log = None
-    return templates.TemplateResponse(
-        request,
-        "logs_ui.html",
-        {
-            "project_loaded": holder.is_loaded(),
-            "log_files": log_files,
-            "selected_log": selected_log,
-            "log_content": log_content,
-            "active_run_id": holder.active_run_id(),
-        },
-    )
-
-
+@router.get("/protocols")
+@router.get("/monitoring")
+@router.get("/logs")
 @router.get("/devices")
-async def devices(
-    request: Request,
-    holder: ProjectHolder = Depends(get_project_holder),
-    templates: Jinja2Templates = Depends(get_templates),
-) -> HTMLResponse:
-    svc = holder.protocol_service
-    associations: list[dict[str, Any]] = []
-    server_url = ""
-    if svc:
-        connectivity = svc.read_components()
-        server_url = connectivity.get("server_url", "").rstrip("/")
-        raw = connectivity.get("associations", [])
-        associations = [
-            {**a, "component_encoded": quote(a.get("component", ""), safe="")}
-            for a in raw
-        ]
-    return templates.TemplateResponse(
-        request,
-        "devices.html",
-        {
-            "project_loaded": holder.is_loaded(),
-            "associations": associations,
-            "server_url": server_url,
-        },
-    )
+async def vue_page() -> FileResponse:
+    return FileResponse(_WEB_INDEX)
 
 
 # ── HTMX fragments ────────────────────────────────────────────────────────────
-
-
-@router.get("/monitoring-ui")
-async def monitoring_ui(
-    request: Request,
-    holder: ProjectHolder = Depends(get_project_holder),
-    templates: Jinja2Templates = Depends(get_templates),
-) -> HTMLResponse:
-    svc = holder.protocol_service
-    monitoring_svc = holder.monitoring_service
-    associations: list[dict[str, Any]] = []
-    server_url = ""
-    config: dict[str, Any] = {
-        "sample_time": 5.0,
-        "request_timeout": 5.0,
-        "variables": [],
-    }
-    sessions: list[dict[str, Any]] = []
-    if svc:
-        connectivity = svc.read_components()
-        server_url = connectivity.get("server_url", "").rstrip("/")
-        associations = connectivity.get("associations", [])
-    if monitoring_svc:
-        config = monitoring_svc.read_config()
-        sessions = monitoring_svc.list_sessions()
-    return templates.TemplateResponse(
-        request,
-        "monitoring.html",
-        {
-            "project_loaded": holder.is_loaded(),
-            "associations": associations,
-            "server_url": server_url,
-            "monitoring_config": config,
-            "sessions": sessions,
-        },
-    )
 
 
 @router.get("/ui/fragments/active-run")

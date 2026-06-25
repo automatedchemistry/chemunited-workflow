@@ -383,6 +383,17 @@ def test_get_components(client):
 # ── /logs ─────────────────────────────────────────────────────────────────────
 
 
+@pytest.mark.parametrize(
+    "path",
+    ["/", "/run-control", "/protocols", "/monitoring", "/devices", "/logs"],
+)
+def test_vue_routes_return_spa_shell(client, path):
+    r = client.get(path)
+
+    assert r.status_code == 200
+    assert '<div id="app"></div>' in r.text
+
+
 def test_list_logs(client):
     r = client.get("/logs/")
     assert r.status_code == 200
@@ -566,3 +577,71 @@ def test_ping_components_offline(client, mocker):
     data = r.json()
     assert all(not entry["online"] for entry in data)
     assert all(entry["error"] for entry in data)
+
+
+def test_ping_component_online(client, mocker):
+    mock_resp = mocker.MagicMock()
+    mock_resp.status_code = 200
+    mock_resp.elapsed.total_seconds.return_value = 0.05
+    mocked_get = mocker.patch(
+        "chemunited_workflow.api.services.protocol._requests.get",
+        return_value=mock_resp,
+    )
+
+    r = client.get("/components/ping/pump")
+
+    assert r.status_code == 200
+    assert r.json() == {
+        "component": "pump",
+        "url": "http://device-server:8000/sim-ml600/pump",
+        "online": True,
+        "status_code": 200,
+        "latency_ms": 50,
+        "error": None,
+    }
+    mocked_get.assert_called_once_with(
+        "http://device-server:8000/sim-ml600/pump", timeout=2.0
+    )
+
+
+def test_ping_component_offline(client, mocker):
+    import requests as req
+
+    mocker.patch(
+        "chemunited_workflow.api.services.protocol._requests.get",
+        side_effect=req.exceptions.ConnectionError("refused"),
+    )
+
+    r = client.get("/components/ping/pump")
+
+    assert r.status_code == 200
+    data = r.json()
+    assert data["component"] == "pump"
+    assert data["url"] == "http://device-server:8000/sim-ml600/pump"
+    assert data["online"] is False
+    assert "ConnectionError" in data["error"]
+
+
+def test_ping_component_unconfigured(client, mocker):
+    mocked_get = mocker.patch(
+        "chemunited_workflow.api.services.protocol._requests.get"
+    )
+
+    r = client.get("/components/ping/sensor")
+
+    assert r.status_code == 200
+    assert r.json() == {
+        "component": "sensor",
+        "url": "",
+        "online": False,
+        "status_code": None,
+        "latency_ms": None,
+        "error": "not configured",
+    }
+    mocked_get.assert_not_called()
+
+
+def test_ping_component_missing(client):
+    r = client.get("/components/ping/ghost")
+
+    assert r.status_code == 404

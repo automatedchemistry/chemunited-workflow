@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 from mcp.server.fastmcp import FastMCP
 
 from chemunited_workflow.api.project_holder import ProjectHolder
+from chemunited_workflow.api.services.monitoring import MonitoringService
 from chemunited_workflow.api.services.protocol import ProtocolService
 from chemunited_workflow.api.services.runner import RunnerService
 from chemunited_workflow.project_loader import (
@@ -30,6 +32,15 @@ def _runner(holder: ProjectHolder) -> RunnerService:
     svc = holder.runner_service
     if svc is None:
         raise RuntimeError("runner_service is None — call is_loaded() before _runner()")
+    return svc
+
+
+def _monitoring(holder: ProjectHolder) -> MonitoringService:
+    svc = holder.monitoring_service
+    if svc is None:
+        raise RuntimeError(
+            "monitoring_service is None — call is_loaded() before _monitoring()"
+        )
     return svc
 
 
@@ -284,3 +295,242 @@ def register_tools(mcp: FastMCP, holder: ProjectHolder) -> None:
             return {"archived": archived_path}
         except FileNotFoundError as exc:
             return {"error": str(exc)}
+
+    # ── Run control (additional) ──────────────────────────────────────────────
+
+    @mcp.tool()
+    def get_active_run() -> dict:
+        """Return the active run ID without consuming queued execution events.
+
+        Returns ``null`` for ``active_run_id`` when no run is in progress.
+        Unlike ``get_run_status`` this does not drain the event queue.
+        """
+        return {"active_run_id": holder.active_run_id()}
+
+    @mcp.tool()
+    def drain_run_pool() -> list[dict]:
+        """Return all pending device commands and delete their pool files.
+
+        Reads every ``*.jsonl`` file under ``log/pool/``, collects every JSON
+        line, deletes the files, and returns the full list. Returns an empty
+        list when no commands have been issued since the last poll.
+
+        Poll at a comfortable interval (e.g. every 500 ms) while a run is
+        active to see live device activity.
+        """
+        if not holder.is_loaded():
+            return [{"error": _NO_PROJECT}]
+        pool_dir = holder.project_dir / "log" / "pool"
+        if not pool_dir.exists():
+            return []
+        commands: list[dict] = []
+        for f in pool_dir.glob("*.jsonl"):
+            try:
+                for line in f.read_text(encoding="utf-8").splitlines():
+                    line = line.strip()
+                    if line:
+                        commands.append(json.loads(line))
+                f.unlink()
+            except (OSError, json.JSONDecodeError):
+                pass
+        return commands
+
+    # ── Components (additional) ───────────────────────────────────────────────
+
+    @mcp.tool()
+    def ping_component(component: str, timeout: float = 2.0) -> dict:
+        """Verify that a single configured device URL is reachable.
+
+        Parameters
+        ----------
+        component:
+            Component name as defined in ``connectivity/associations.json``.
+        timeout:
+            HTTP request timeout in seconds.
+        """
+        if not holder.is_loaded():
+            return {"error": _NO_PROJECT}
+        try:
+            return _protocol(holder).ping_component(component, timeout)
+        except KeyError as exc:
+            return {"error": str(exc)}
+
+    # ── Monitoring ────────────────────────────────────────────────────────────
+
+    @mcp.tool()
+    def discover_component_commands(component: str, timeout: float = 5.0) -> dict:
+        """List GET commands a component exposes via its live OpenAPI schema.
+
+        Fetches ``{device_url}/openapi.json`` from the running device server.
+        Use the returned ``command`` values when registering variables via
+        ``set_monitoring_config``.
+
+        Parameters
+        ----------
+        component:
+            Component name as defined in ``connectivity/associations.json``.
+        timeout:
+            HTTP request timeout in seconds.
+        """
+        if not holder.is_loaded():
+            return {"error": _NO_PROJECT}
+        try:
+            return _monitoring(holder).discover(component, timeout=timeout)
+        except KeyError as exc:
+            return {"error": str(exc)}
+        except Exception as exc:
+            return {"error": f"Device server unreachable or has no OpenAPI schema: {exc}"}
+
+    @mcp.tool()
+    def get_monitoring_config() -> dict:
+        """Return the current monitoring registration.
+
+        Returns ``sample_time``, ``request_timeout``, and ``variables`` — the
+        list of component/command pairs that will be polled when a session starts.
+        """
+        if not holder.is_loaded():
+            return {"error": _NO_PROJECT}
+        return _monitoring(holder).read_config()
+
+    @mcp.tool()
+    def set_monitoring_config(
+        sample_time: float,
+        variables: list[dict],
+        request_timeout: float = 5.0,
+    ) -> dict:
+        """Register which variables to monitor.
+
+        Persisted to ``connectivity/monitoring.json`` so the registration
+        survives a server restart. Does not start polling — call
+        ``start_monitoring_session`` to begin a session.
+
+        Parameters
+        ----------
+        sample_time:
+            Seconds between sampling ticks (must be > 0).
+        variables:
+            List of variable dicts. Each entry requires ``component`` and
+            ``command`` keys, and optionally ``kwargs`` (extra query parameters).
+            Example: ``[{"component": "reactor", "command": "temperature"}]``
+        request_timeout:
+            Per-request timeout in seconds. A hung device only delays its own
+            reading (must be > 0).
+        """
+        if not holder.is_loaded():
+            return {"error": _NO_PROJECT}
+        _monitoring(holder).write_config(
+            {
+                "sample_time": sample_time,
+                "request_timeout": request_timeout,
+                "variables": variables,
+            }
+        )
+        return _monitoring(holder).read_config()
+
+    @mcp.tool()
+    def start_monitoring_session() -> dict:
+        """Start a standalone monitoring session using the current registered config.
+
+        Spawns a background polling loop, independent of any protocol run.
+        Returns a ``session_id`` to use with ``get_monitoring_latest``,
+        ``get_monitoring_session``, ``stop_monitoring_session``, and
+        ``get_monitoring_profile``.
+        """
+        if not holder.is_loaded():
+            return {"error": _NO_PROJECT}
+        try:
+            session_id = _monitoring(holder).start_session()
+            return {"session_id": session_id, "state": "running"}
+        except ValueError as exc:
+            return {"error": str(exc)}
+
+    @mcp.tool()
+    def list_monitoring_sessions() -> list[dict]:
+        """List all known monitoring sessions and their state."""
+        if not holder.is_loaded():
+            return [{"error": _NO_PROJECT}]
+        return _monitoring(holder).list_sessions()
+
+    @mcp.tool()
+    def get_monitoring_session(session_id: str) -> dict:
+        """Return the state of a specific monitoring session.
+
+        Parameters
+        ----------
+        session_id:
+            Session ID returned by ``start_monitoring_session``.
+        """
+        if not holder.is_loaded():
+            return {"error": _NO_PROJECT}
+        session = _monitoring(holder).get_session(session_id)
+        if session is None:
+            return {"error": f"Session '{session_id}' not found."}
+        return session
+
+    @mcp.tool()
+    def stop_monitoring_session(session_id: str) -> dict:
+        """Stop an active monitoring session.
+
+        Recorded profile files are kept on disk and can still be read via
+        ``get_monitoring_profile``.
+
+        Parameters
+        ----------
+        session_id:
+            Session ID returned by ``start_monitoring_session``.
+        """
+        if not holder.is_loaded():
+            return {"error": _NO_PROJECT}
+        ok = _monitoring(holder).stop_session(session_id)
+        if not ok:
+            return {"error": f"Session '{session_id}' not found or not running."}
+        return {"stopped": session_id}
+
+    @mcp.tool()
+    def get_monitoring_latest(session_id: str) -> dict:
+        """Return the latest reading per registered variable — the live dashboard feed.
+
+        Parameters
+        ----------
+        session_id:
+            Session ID returned by ``start_monitoring_session``.
+        """
+        if not holder.is_loaded():
+            return {"error": _NO_PROJECT}
+        try:
+            return _monitoring(holder).get_latest(session_id)
+        except KeyError as exc:
+            return {"error": str(exc)}
+
+    @mcp.tool()
+    def get_monitoring_profile(
+        session_id: str,
+        component: str,
+        command: str,
+        tail: int | None = None,
+    ) -> list[dict]:
+        """Read back the recorded profile for one variable in a session.
+
+        Returns every recorded reading (one entry per sampling tick, including
+        failed/missed ticks with ``error`` set) in execution order. Pass
+        ``tail`` to return only the last N readings.
+
+        Parameters
+        ----------
+        session_id:
+            Session ID returned by ``start_monitoring_session``.
+        component:
+            Component name as registered in the monitoring config.
+        command:
+            GET command/path as registered in the monitoring config.
+        tail:
+            If set, return only the last N readings.
+        """
+        if not holder.is_loaded():
+            return [{"error": _NO_PROJECT}]
+        try:
+            return _monitoring(holder).read_profile(
+                session_id, component, command, tail=tail
+            )
+        except FileNotFoundError as exc:
+            return [{"error": str(exc)}]

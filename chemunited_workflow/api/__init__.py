@@ -18,7 +18,6 @@ from .routers.protocols import read_router as protocols_read_router
 from .routers.protocols import write_router as protocols_write_router
 from .routers.ui import router as ui_router
 
-_STATIC_DIR = Path(__file__).parent / "static"
 _WEB_DIR = Path(__file__).parent.parent / "web"
 
 
@@ -62,8 +61,6 @@ def create_api(
             yield
 
     app = FastAPI(title="chemunited API", lifespan=_lifespan)
-
-    app.mount("/static", StaticFiles(directory=_STATIC_DIR), name="static")
 
     app.dependency_overrides[get_project_holder] = lambda: holder
 
