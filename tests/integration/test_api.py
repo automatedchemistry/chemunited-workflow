@@ -276,11 +276,14 @@ def test_get_active_run_while_running(app):
     assert r.json() == {"active_run_id": run_id}
 
 
-def test_start_run_while_active_returns_409(client):
-    r1 = client.post("/run/", json={"protocol": "run_001.json"})
-    assert r1.status_code == 202
-    r2 = client.post("/run/", json={"protocol": "run_001.json"})
-    assert r2.status_code == 409
+def test_start_run_while_active_returns_409(client, app):
+    from chemunited_workflow.api.dependencies import get_project_holder
+
+    holder = app.dependency_overrides[get_project_holder]()
+    # Seed RUNNING state without a background thread so there is no race.
+    holder.run_store.try_start("run_001.json")
+    r = client.post("/run/", json={"protocol": "run_001.json"})
+    assert r.status_code == 409
 
 
 def test_cancel_run_interrupts_client_wait(tmp_path):
