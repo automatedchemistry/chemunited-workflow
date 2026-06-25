@@ -43,5 +43,3 @@ def get_monitoring_service(
     if svc is None:
         raise HTTPException(status_code=503, detail=_NO_PROJECT_MSG)
     return svc
-
-

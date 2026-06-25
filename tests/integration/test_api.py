@@ -623,9 +623,7 @@ def test_ping_component_offline(client, mocker):
 
 
 def test_ping_component_unconfigured(client, mocker):
-    mocked_get = mocker.patch(
-        "chemunited_workflow.api.services.protocol._requests.get"
-    )
+    mocked_get = mocker.patch("chemunited_workflow.api.services.protocol._requests.get")
 
     r = client.get("/components/ping/sensor")
 

@@ -320,6 +320,7 @@ def register_tools(mcp: FastMCP, holder: ProjectHolder) -> None:
         """
         if not holder.is_loaded():
             return [{"error": _NO_PROJECT}]
+        assert holder.project_dir is not None
         pool_dir = holder.project_dir / "log" / "pool"
         if not pool_dir.exists():
             return []
@@ -358,7 +359,9 @@ def register_tools(mcp: FastMCP, holder: ProjectHolder) -> None:
     # ── Monitoring ────────────────────────────────────────────────────────────
 
     @mcp.tool()
-    def discover_component_commands(component: str, timeout: float = 5.0) -> dict:
+    def discover_component_commands(
+        component: str, timeout: float = 5.0
+    ) -> dict | list:
         """List GET commands a component exposes via its live OpenAPI schema.
 
         Fetches ``{device_url}/openapi.json`` from the running device server.
@@ -379,7 +382,9 @@ def register_tools(mcp: FastMCP, holder: ProjectHolder) -> None:
         except KeyError as exc:
             return {"error": str(exc)}
         except Exception as exc:
-            return {"error": f"Device server unreachable or has no OpenAPI schema: {exc}"}
+            return {
+                "error": f"Device server unreachable or has no OpenAPI schema: {exc}"
+            }
 
     @mcp.tool()
     def get_monitoring_config() -> dict:

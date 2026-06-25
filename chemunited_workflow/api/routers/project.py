@@ -62,4 +62,6 @@ async def platform_svg(holder: ProjectHolder = Depends(get_project_holder)) -> R
     svg_path = pd / "draw" / "platform.svg"
     if not svg_path.is_file():
         raise HTTPException(status_code=404, detail="platform.svg not found.")
-    return Response(content=svg_path.read_text(encoding="utf-8"), media_type="image/svg+xml")
+    return Response(
+        content=svg_path.read_text(encoding="utf-8"), media_type="image/svg+xml"
+    )

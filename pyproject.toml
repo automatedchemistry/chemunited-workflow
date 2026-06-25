@@ -38,6 +38,10 @@ discovery = ["zeroconf>=0.131"]
 [project.scripts]
 chemunited-workflow = "chemunited_workflow.cli:main"
 
+[tool.pytest.ini_options]
+pythonpath = ["."]
+norecursedirs = ["pytest-tmp-cli", ".pytest_cache", ".venv", "build", "dist"]
+
 [tool.setuptools.package-data]
 "chemunited_workflow" = ["web/index.html", "web/chemunited.ico", "web/assets/*"]
 
