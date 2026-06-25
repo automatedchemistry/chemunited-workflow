@@ -39,7 +39,7 @@ discovery = ["zeroconf>=0.131"]
 chemunited-workflow = "chemunited_workflow.cli:main"
 
 [tool.setuptools.package-data]
-"chemunited_workflow.api" = ["templates/*.html", "static/*"]
+"chemunited_workflow" = ["web/index.html", "web/chemunited.ico", "web/assets/*"]
 
 [tool.setuptools]
 packages = [
