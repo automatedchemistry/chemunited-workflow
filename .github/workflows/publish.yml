@@ -15,10 +15,10 @@ jobs:
 
     steps:
       - name: Check out repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
 
       - name: Set up Python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v5
         with:
           python-version: "3.14"
           cache: pip
@@ -61,15 +61,45 @@ jobs:
         run: python -m twine check dist/*
 
       - name: Upload distributions
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v4
         with:
           name: python-package-distributions
           path: dist/
           if-no-files-found: error
 
+  github-release:
+    name: Create GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download distributions
+        uses: actions/download-artifact@v4
+        with:
+          name: python-package-distributions
+          path: dist/
+
+      - name: Create release and upload distributions
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "$GITHUB_REF_NAME" --repo "${{ github.repository }}" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" dist/* \
+              --repo "${{ github.repository }}" \
+              --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" dist/* \
+              --repo "${{ github.repository }}" \
+              --title "$GITHUB_REF_NAME" \
+              --generate-notes \
+              --verify-tag
+          fi
+
   publish-testpypi:
     name: Publish to TestPyPI
-    needs: build
+    needs: github-release
     runs-on: ubuntu-latest
     environment: testpypi
     permissions:
@@ -78,7 +108,7 @@ jobs:
 
     steps:
       - name: Download distributions
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@v4
         with:
           name: python-package-distributions
           path: dist/
@@ -87,41 +117,11 @@ jobs:
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           repository-url: https://test.pypi.org/legacy/
-
-  github-release:
-    name: Create GitHub Release
-    needs: publish-testpypi
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@v6
-
-      - name: Download distributions
-        uses: actions/download-artifact@v8
-        with:
-          name: python-package-distributions
-          path: dist/
-
-      - name: Create release and upload distributions
-        env:
-          GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
-        run: |
-          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
-            gh release upload "$GITHUB_REF_NAME" dist/* --clobber
-          else
-            gh release create "$GITHUB_REF_NAME" dist/* \
-              --title "$GITHUB_REF_NAME" \
-              --generate-notes \
-              --verify-tag
-          fi
+          skip-existing: true
 
   publish-pypi:
     name: Publish to PyPI
-    needs: github-release
+    needs: publish-testpypi
     runs-on: ubuntu-latest
     environment: pypi
     permissions:
@@ -130,10 +130,12 @@ jobs:
 
     steps:
       - name: Download distributions
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@v4
         with:
           name: python-package-distributions
           path: dist/
 
       - name: Publish distributions to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          skip-existing: true
