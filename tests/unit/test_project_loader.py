@@ -50,7 +50,9 @@ def test_load_project_missing_main_parameters(tmp_path):
     protocols_dir = tmp_path / "protocols"
     protocols_dir.mkdir()
     write_source(protocols_dir, "__init__.py", VALID_INIT_SRC)
-    with pytest.raises(ProjectLoadError, match="No 'protocols/main_parameters.py' found"):
+    with pytest.raises(
+        ProjectLoadError, match="No 'protocols/main_parameters.py' found"
+    ):
         load_project(tmp_path)
 
 

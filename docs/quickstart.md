@@ -23,18 +23,17 @@ class MyWorkflow(Process[MyConfig]):
 
     def dispense_step(self, ctx):
         client = self.platform["pump_01"]
-        r = client.post("dispense", json={"volume": self.config.volume_ul})
+        r = client.post("dispense", json={"volume": self.config.volume_ul}, raw_response=True)
         return r.status_code == 200
 
     def heat_step(self, ctx):
         client = self.platform["reactor_01"]
-        r = client.post("set_temp", json={"temp": self.config.temperature_c})
+        r = client.post("set_temp", json={"temp": self.config.temperature_c}, raw_response=True)
         return r.status_code == 200
 
     def verify_step(self, ctx):
         client = self.platform["reactor_01"]
-        r = client.get("status")
-        return r.json()["ready"]
+        return client.get("status")["ready"]
 ```
 
 ### 2. Configure device connectivity

@@ -43,18 +43,16 @@ def test_dry_run_response_status_200():
     assert r.status_code == 200
 
 
-def test_dry_run_response_empty_body():
+def test_dry_run_response_empty_json_body():
     client = BaseClient("http://device:8000", dry_run=True)
     r = client.get("/x")
-    assert r.content == b""
+    assert r.content == b"{}"
 
 
-def test_dry_run_response_json_raises():
-
+def test_dry_run_response_json_parses_to_empty_dict():
     client = BaseClient("http://device:8000", dry_run=True)
     r = client.get("/x")
-    with pytest.raises(Exception):
-        r.json()
+    assert r.json() == {}
 
 
 def test_dry_run_hooks_not_fired():

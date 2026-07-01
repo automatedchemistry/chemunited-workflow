@@ -115,10 +115,38 @@ def test_component_client_sequential_calls_succeed():
     resp_lib.add(resp_lib.GET, f"{BASE_URL}/x", status=200, body=b"")
     resp_lib.add(resp_lib.GET, f"{BASE_URL}/x", status=200, body=b"")
     client = ComponentClient(BASE_URL)
-    r1 = client.get("/x")
-    r2 = client.get("/x")
+    r1 = client.get("/x", raw_response=True)
+    r2 = client.get("/x", raw_response=True)
     assert r1.status_code == 200
     assert r2.status_code == 200
+
+
+# ── ComponentClient: raw_response toggle ─────────────────────────────────────
+
+
+@resp_lib.activate
+@pytest.mark.parametrize(
+    ("method", "verb"),
+    [(resp_lib.GET, "get"), (resp_lib.PUT, "put"), (resp_lib.POST, "post")],
+)
+def test_component_client_defaults_to_parsed_json(method, verb):
+    resp_lib.add(method, f"{BASE_URL}/x", status=200, json={"ready": True})
+    client = ComponentClient(BASE_URL)
+    result = getattr(client, verb)("/x")
+    assert result == {"ready": True}
+
+
+@resp_lib.activate
+@pytest.mark.parametrize(
+    ("method", "verb"),
+    [(resp_lib.GET, "get"), (resp_lib.PUT, "put"), (resp_lib.POST, "post")],
+)
+def test_component_client_raw_response_returns_response_object(method, verb):
+    resp_lib.add(method, f"{BASE_URL}/x", status=200, json={"ready": True})
+    client = ComponentClient(BASE_URL)
+    result = getattr(client, verb)("/x", raw_response=True)
+    assert isinstance(result, requests.Response)
+    assert result.status_code == 200
 
 
 def test_poll_feedback_raises_after_custom_timeout(mocker):
@@ -246,7 +274,7 @@ def test_client_usable_after_failed_concurrent_call():
     # After releasing the lock, the client should work normally
     with resp_lib.RequestsMock() as rsps:
         rsps.add(resp_lib.GET, f"{BASE_URL}/x", status=200, body=b"")
-        r = client.get("/x")
+        r = client.get("/x", raw_response=True)
     assert r.status_code == 200
 
 
@@ -351,6 +379,7 @@ def test_component_client_put_dry_run_accepts_quantity_params():
 
     response = client.put(
         "/withdraw",
+        raw_response=True,
         rate="4 ml/min",
         volume=ChemUnitQuantity(1, "ml"),
     )
@@ -409,6 +438,7 @@ def test_component_client_put_passes_safe_params_to_base_client(mocker):
 
     client.put(
         "/withdraw",
+        raw_response=True,
         params={"volume": ChemUnitQuantity(1, "ml")},
         json={"rate": ChemUnitQuantity(2.0, "ml/min")},
     )

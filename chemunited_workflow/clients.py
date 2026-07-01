@@ -72,14 +72,16 @@ class BaseClient:
         return f"{self.base_url}/{path.lstrip('/')}"
 
     def _make_dry_response(self) -> requests.Response:
-        """Return a synthetic 200 OK with empty body used in dry-run mode.
+        """Return a synthetic 200 OK with an empty JSON body used in dry-run mode.
 
         Node methods that inspect the response body will receive no data — dry-run
         validates workflow feasibility (graph traversal, routing) not device behaviour.
+        The body is `{}` rather than truly empty so that `.json()` (the default return
+        value of ComponentClient's get/put/post) succeeds during dry runs.
         """
         response = requests.Response()
         response.status_code = 200
-        response._content = b""
+        response._content = b"{}"
         response.headers["Content-Type"] = "application/json"
         return response
 
@@ -273,6 +275,7 @@ class ComponentClient(BaseClient):
         self,
         path: str,
         *,
+        raw_response: bool = False,
         params: Any | None = None,
         json: Any | None = None,
         wait_time: float = 0.0,
@@ -280,7 +283,7 @@ class ComponentClient(BaseClient):
         feedback_status_command: str = "",
         feedback_answer: str = "true",
         **command_params: Any,
-    ) -> requests.Response:
+    ) -> requests.Response | Any:
         query_params = self._merge_query_params(params, command_params)
         safe_query_params = _json_safe(query_params)
         safe_json = _json_safe(json) if json is not None else None
@@ -303,19 +306,23 @@ class ComponentClient(BaseClient):
             feedback_status_command,
             feedback_answer,
         )
-        return resp
+        if raw_response:
+            return resp
+        else:
+            return resp.json()
 
     def get(
         self,
         path: str,
         *,
+        raw_response: bool = False,
         params: Any | None = None,
         wait_time: float = 0.0,
         wait_feedback_status: bool = False,
         feedback_status_command: str = "",
         feedback_answer: str = "true",
         **command_params: Any,
-    ) -> requests.Response:
+    ) -> requests.Response | Any:
         query_params = self._merge_query_params(params, command_params)
         safe_query_params = _json_safe(query_params)
         self._write_json_log(
@@ -337,7 +344,50 @@ class ComponentClient(BaseClient):
             feedback_status_command,
             feedback_answer,
         )
-        return resp
+        if raw_response:
+            return resp
+        else:
+            return resp.json()
+
+    def post(
+        self,
+        path: str,
+        *,
+        raw_response: bool = False,
+        params: Any | None = None,
+        json: Any | None = None,
+        wait_time: float = 0.0,
+        wait_feedback_status: bool = False,
+        feedback_status_command: str = "",
+        feedback_answer: str = "true",
+        **command_params: Any,
+    ) -> requests.Response | Any:
+        query_params = self._merge_query_params(params, command_params)
+        safe_query_params = _json_safe(query_params)
+        safe_json = _json_safe(json) if json is not None else None
+        self._write_json_log(
+            {
+                "component": self.component_ui,
+                "method": "POST",
+                "command": path,
+                "params": safe_query_params,
+                "wait_time": wait_time,
+                "wait_feedback_status": wait_feedback_status,
+                "feedback_status_command": feedback_status_command,
+                "feedback_answer": feedback_answer,
+            }
+        )
+        resp = super().post(path, params=safe_query_params, json=safe_json)
+        self._execute_post_command(
+            wait_time,
+            wait_feedback_status,
+            feedback_status_command,
+            feedback_answer,
+        )
+        if raw_response:
+            return resp
+        else:
+            return resp.json()
 
     def _execute_post_command(
         self,
