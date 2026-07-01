@@ -762,3 +762,67 @@ def test_put_project_service_init_failure(tmp_path, mocker):
     detail = r.json()["detail"]
     assert "Failed to initialize services" in detail
     assert "RuntimeError: boom" in detail
+
+
+# ── /project/platform-devices ────────────────────────────────────────────────
+
+
+def test_platform_devices_no_project():
+    app = create_api()
+    with TestClient(app) as bare_client:
+        r = bare_client.get("/project/platform-devices")
+    assert r.status_code == 404
+
+
+def test_platform_devices_missing_manifest(client):
+    r = client.get("/project/platform-devices")
+    assert r.status_code == 404
+
+
+def test_platform_devices_success(client, project):
+    draw_dir = project["tmp_path"] / "draw"
+    draw_dir.mkdir()
+    (draw_dir / "platform-devices.json").write_text(
+        json.dumps(
+            {
+                "devices": [
+                    {
+                        "id": "reactor-1",
+                        "label": "reactor-1",
+                        "figure": "Reactor",
+                        "is_electronic": True,
+                        "x": 10.0,
+                        "y": 20.0,
+                        "w": 30.0,
+                        "h": 40.0,
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    r = client.get("/project/platform-devices")
+    assert r.status_code == 200
+    devices = r.json()
+    assert devices == [
+        {
+            "id": "reactor-1",
+            "label": "reactor-1",
+            "figure": "Reactor",
+            "is_electronic": True,
+            "x": 10.0,
+            "y": 20.0,
+            "w": 30.0,
+            "h": 40.0,
+        }
+    ]
+
+
+def test_platform_devices_malformed(client, project):
+    draw_dir = project["tmp_path"] / "draw"
+    draw_dir.mkdir()
+    (draw_dir / "platform-devices.json").write_text("{not valid json", encoding="utf-8")
+
+    r = client.get("/project/platform-devices")
+    assert r.status_code == 500

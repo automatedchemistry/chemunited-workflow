@@ -117,6 +117,17 @@ class ProjectOut(BaseModel):
     project_dir: str | None = None
 
 
+class PlatformDevice(BaseModel):
+    id: str
+    label: str
+    figure: str | None = None
+    is_electronic: bool | None = None
+    x: float
+    y: float
+    w: float
+    h: float
+
+
 class MonitoringVariableIn(BaseModel):
     component: str = Field(
         description="Component name, matching an entry in connectivity/associations.json."

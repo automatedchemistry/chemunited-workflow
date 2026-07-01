@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -15,7 +16,7 @@ from chemunited_workflow.project_loader import (
 
 from ..dependencies import get_project_holder
 from ..project_holder import ProjectHolder
-from ..schemas import ProjectIn, ProjectOut
+from ..schemas import PlatformDevice, ProjectIn, ProjectOut
 
 router = APIRouter(prefix="/project", tags=["project"])
 
@@ -79,3 +80,26 @@ async def platform_svg(holder: ProjectHolder = Depends(get_project_holder)) -> R
     return Response(
         content=svg_path.read_text(encoding="utf-8"), media_type="image/svg+xml"
     )
+
+
+@router.get(
+    "/platform-devices",
+    response_model=list[PlatformDevice],
+    include_in_schema=False,
+)
+async def platform_devices(
+    holder: ProjectHolder = Depends(get_project_holder),
+) -> list[PlatformDevice]:
+    pd = holder.project_dir
+    if pd is None:
+        raise HTTPException(status_code=404, detail="No project loaded.")
+    devices_path = pd / "draw" / "platform-devices.json"
+    if not devices_path.is_file():
+        raise HTTPException(status_code=404, detail="platform-devices.json not found.")
+    try:
+        data = json.loads(devices_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise HTTPException(
+            status_code=500, detail="platform-devices.json is malformed."
+        ) from exc
+    return data.get("devices", [])
