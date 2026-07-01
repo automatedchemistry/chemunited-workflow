@@ -1,11 +1,12 @@
 # Script file of project parameter
 # Updated/Created on: 2026-04-24T16:15:02.029103+00:00
 # Project name: complete
-from __future__ import annotations
+
+from typing import Annotated, Literal, TYPE_CHECKING
 
 import networkx as nx
-from pydantic import BaseModel, ConfigDict
-from typing import TYPE_CHECKING
+from chemunited_quantities import ChemQuantityValidator, ChemUnitQuantity
+from pydantic import BaseModel, ConfigDict, Field
 
 from chemunited_workflow import (
     NodeExecutionContext,
@@ -24,9 +25,152 @@ if TYPE_CHECKING:
 class ProcessConfig(BaseModel):
     model_config = ConfigDict(frozen=True)
 
-    # Add your process-level parameters here
-    # Example:
-    # flow_rate: str = "5 ml/min"
+    branch_timeout: Annotated[ChemUnitQuantity, ChemQuantityValidator("s")] = Field(
+        title="Branch Timeout",
+        description="Maximum time to wait for each parallel branch to finish.",
+        default=ChemUnitQuantity("120 s"),
+        json_schema_extra={
+            "group": "Parallel Execution",
+            "editable": True,
+            "visible": True,
+            "unit": "s",
+        },
+    )
+
+    retry_count: int = Field(
+        title="Retry Count",
+        description="Number of retry attempts allowed for a failed branch step.",
+        default=1,
+        ge=0,
+        le=5,
+        json_schema_extra={
+            "group": "Parallel Execution",
+            "editable": True,
+            "visible": True,
+        },
+    )
+
+    parallel_branch_policy: Literal["fail-fast", "finish-open-branches", "ignore"] = (
+        Field(
+            title="Parallel Branch Policy",
+            description="How the process handles a failure in one parallel branch.",
+            default="finish-open-branches",
+            json_schema_extra={
+                "group": "Parallel Execution",
+                "editable": True,
+                "visible": True,
+            },
+        )
+    )
+
+    as_pump_volume: Annotated[ChemUnitQuantity, ChemQuantityValidator("ml")] = Field(
+        title="AS Pump Volume",
+        description="Autosampler pump volume used by the first branch.",
+        default=ChemUnitQuantity("10 ml"),
+        json_schema_extra={
+            "group": "Device Commands",
+            "editable": True,
+            "visible": True,
+            "unit": "ml",
+        },
+    )
+
+    as_pump_rate: Annotated[ChemUnitQuantity, ChemQuantityValidator("ml / min")] = (
+        Field(
+            title="AS Pump Rate",
+            description="Autosampler pump infusion or withdrawal rate.",
+            default=ChemUnitQuantity("50 ml / min"),
+            json_schema_extra={
+                "group": "Device Commands",
+                "editable": True,
+                "visible": True,
+                "unit": "ml / min",
+            },
+        )
+    )
+
+    quench_volume: Annotated[ChemUnitQuantity, ChemQuantityValidator("ml")] = Field(
+        title="Quench Volume",
+        description="Quench stream volume used by the second branch.",
+        default=ChemUnitQuantity("5 ml"),
+        json_schema_extra={
+            "group": "Device Commands",
+            "editable": True,
+            "visible": True,
+            "unit": "ml",
+        },
+    )
+
+    quench_rate: Annotated[ChemUnitQuantity, ChemQuantityValidator("ml / min")] = Field(
+        title="Quench Rate",
+        description="Quench pump infusion or withdrawal rate.",
+        default=ChemUnitQuantity("25 ml / min"),
+        json_schema_extra={
+            "group": "Device Commands",
+            "editable": True,
+            "visible": True,
+            "unit": "ml / min",
+        },
+    )
+
+    reagent_volume: Annotated[ChemUnitQuantity, ChemQuantityValidator("ml")] = Field(
+        title="Reagent Volume",
+        description="Reagent stream volume used by the third branch.",
+        default=ChemUnitQuantity("5 ml"),
+        json_schema_extra={
+            "group": "Device Commands",
+            "editable": True,
+            "visible": True,
+            "unit": "ml",
+        },
+    )
+
+    reagent_rate: Annotated[ChemUnitQuantity, ChemQuantityValidator("ml / min")] = (
+        Field(
+            title="Reagent Rate",
+            description="Reagent pump infusion or withdrawal rate.",
+            default=ChemUnitQuantity("20 ml / min"),
+            json_schema_extra={
+                "group": "Device Commands",
+                "editable": True,
+                "visible": True,
+                "unit": "ml / min",
+            },
+        )
+    )
+
+    wait_for_feedback: bool = Field(
+        title="Wait For Feedback",
+        description="Wait for configured device feedback before completing a branch.",
+        default=True,
+        json_schema_extra={
+            "group": "Automation",
+            "editable": True,
+            "visible": True,
+        },
+    )
+
+    enable_relay: bool = Field(
+        title="Enable Relay",
+        description="Enable relay commands during the synchronized branch step.",
+        default=True,
+        json_schema_extra={
+            "group": "Automation",
+            "editable": True,
+            "visible": True,
+        },
+    )
+
+    collect_branch_logs: bool = Field(
+        title="Collect Branch Logs",
+        description="Keep separate log snippets for each parallel branch.",
+        default=True,
+        json_schema_extra={
+            "group": "Parallel Execution",
+            "editable": True,
+            "visible": True,
+        },
+    )
 
 
 # ── Process class ──────────────────────────────────────────────────────────────
