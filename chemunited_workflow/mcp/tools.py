@@ -13,6 +13,7 @@ from chemunited_workflow.api.services.protocol import ProtocolService
 from chemunited_workflow.api.services.runner import RunnerService
 from chemunited_workflow.project_loader import (
     ProjectLoadError,
+    format_broken_project_error,
     load_project as _load_project,
 )
 
@@ -65,11 +66,21 @@ def register_tools(mcp: FastMCP, holder: ProjectHolder) -> None:
         active = holder.active_run_id()
         if active is not None:
             return {"error": f"Cannot switch project while run '{active}' is active."}
+        project_path = Path(project_dir).resolve()
         try:
-            modules = _load_project(Path(project_dir).resolve())
+            modules = _load_project(project_path)
         except ProjectLoadError as exc:
             return {"error": str(exc)}
-        holder.load(modules)
+        try:
+            holder.load(modules)
+        except Exception as exc:
+            return {
+                "error": format_broken_project_error(
+                    exc,
+                    project_path,
+                    f"Failed to initialize services for project '{project_path}'",
+                )
+            }
         return {"project_dir": str(holder.project_dir)}
 
     @mcp.tool()
@@ -242,7 +253,12 @@ def register_tools(mcp: FastMCP, holder: ProjectHolder) -> None:
         """Verify that all device URLs in ``associations.json`` are reachable.
 
         Each entry reports ``component``, ``url``, ``online``, ``status_code``,
-        ``latency_ms``, and ``error``.
+        ``latency_ms``, ``error``, ``reachability``, and ``reachability_supported``.
+        ``reachability`` is the device's live status (``"online"``, ``"offline"``,
+        or ``"unknown"``) read from its flowchem ``/is-reachable`` endpoint, when
+        available. ``reachability_supported`` is ``False`` if that endpoint 404s
+        (the device server needs a flowchem update), or ``None`` if it could not
+        be determined (e.g. the base URL itself was unreachable).
         """
         if not holder.is_loaded():
             return [{"error": _NO_PROJECT}]
@@ -342,6 +358,11 @@ def register_tools(mcp: FastMCP, holder: ProjectHolder) -> None:
     @mcp.tool()
     def ping_component(component: str, timeout: float = 2.0) -> dict:
         """Verify that a single configured device URL is reachable.
+
+        Also reports ``reachability`` (the device's live status from its
+        flowchem ``/is-reachable`` endpoint) and ``reachability_supported``
+        (``False`` if that endpoint 404s, meaning the device server needs a
+        flowchem update).
 
         Parameters
         ----------

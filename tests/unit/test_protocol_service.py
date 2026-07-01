@@ -352,6 +352,72 @@ def test_ping_two_valid_devices(svc):
     assert len(results) == 2
 
 
+# ── is-reachable probe ──────────────────────────────────────────────────────
+
+
+def _reachability_response(status_code: int, value: str | None = None) -> MagicMock:
+    resp = MagicMock()
+    resp.status_code = status_code
+    resp.ok = 200 <= status_code < 300
+    if value is not None:
+        resp.json.return_value = value
+    return resp
+
+
+def test_ping_reachability_online(svc):
+    reach_resp = _reachability_response(200, "online")
+    with patch(
+        f"{_MODULE}.get",
+        side_effect=[_mock_response(200), reach_resp, _mock_response(200), reach_resp],
+    ):
+        results = svc.ping_components()
+    named = {r["component"]: r for r in results}
+    assert named["pump"]["reachability"] == "online"
+    assert named["pump"]["reachability_supported"] is True
+
+
+def test_ping_reachability_not_supported_404(svc):
+    reach_resp = _reachability_response(404)
+    with patch(
+        f"{_MODULE}.get",
+        side_effect=[_mock_response(200), reach_resp, _mock_response(200), reach_resp],
+    ):
+        results = svc.ping_components()
+    named = {r["component"]: r for r in results}
+    assert named["pump"]["reachability"] is None
+    assert named["pump"]["reachability_supported"] is False
+
+
+def test_ping_reachability_undetermined_on_error(svc):
+    with patch(
+        f"{_MODULE}.get",
+        side_effect=[
+            _mock_response(200),
+            requests.exceptions.Timeout(),
+            _mock_response(200),
+            requests.exceptions.Timeout(),
+        ],
+    ):
+        results = svc.ping_components()
+    named = {r["component"]: r for r in results}
+    assert named["pump"]["online"] is True
+    assert named["pump"]["reachability"] is None
+    assert named["pump"]["reachability_supported"] is None
+
+
+def test_ping_reachability_skipped_when_base_offline(svc):
+    with patch(
+        f"{_MODULE}.get",
+        side_effect=requests.exceptions.ConnectionError("refused"),
+    ) as mock_get:
+        results = svc.ping_components()
+    named = {r["component"]: r for r in results}
+    assert named["pump"]["reachability"] is None
+    assert named["pump"]["reachability_supported"] is None
+    # one call per component (base ping only, no is-reachable follow-up)
+    assert mock_get.call_count == 2
+
+
 # ── write_protocol main_parameter injection ───────────────────────────────────
 
 

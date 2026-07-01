@@ -42,8 +42,8 @@ When running with `--with-mcp` (MCP streamable-HTTP endpoint embedded in the Fas
 | Tool | Description |
 |------|-------------|
 | `get_components` | Return the device connectivity map (`connectivity/associations.json`). |
-| `ping_components` | Check reachability of all device URLs. |
-| `ping_component` | Check reachability of a single named device. |
+| `ping_components` | Check reachability of all device URLs, including live device status via `/is-reachable` when supported. |
+| `ping_component` | Check reachability of a single named device, including live device status via `/is-reachable` when supported. |
 
 ## Monitoring
 

@@ -1,6 +1,6 @@
 """Request/response schemas for the chemunited API."""
 
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, field_validator, model_validator, Field
 
@@ -105,6 +105,8 @@ class ComponentStatus(BaseModel):
     status_code: int | None = None
     latency_ms: int | None = None
     error: str | None = None
+    reachability: Literal["online", "offline", "unknown"] | None = None
+    reachability_supported: bool | None = None
 
 
 class ProjectIn(BaseModel):

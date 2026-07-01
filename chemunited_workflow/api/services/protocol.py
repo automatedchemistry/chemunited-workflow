@@ -260,12 +260,27 @@ class ProtocolService:
             "status_code": None,
             "latency_ms": None,
             "error": None,
+            "reachability": None,
+            "reachability_supported": None,
         }
         try:
             response = _requests.get(url, timeout=timeout)
             entry["online"] = True
             entry["status_code"] = response.status_code
             entry["latency_ms"] = round(response.elapsed.total_seconds() * 1000)
+
+            reach_url = url.rstrip("/") + "/is-reachable"
+            try:
+                reach_response = _requests.get(reach_url, timeout=timeout)
+                if reach_response.status_code == 404:
+                    entry["reachability_supported"] = False
+                elif reach_response.ok:
+                    value = reach_response.json()
+                    if value in ("online", "offline", "unknown"):
+                        entry["reachability"] = value
+                        entry["reachability_supported"] = True
+            except _requests.exceptions.RequestException:
+                pass  # leave reachability/reachability_supported as None (undetermined)
         except _requests.exceptions.ConnectionError as exc:
             entry["error"] = f"ConnectionError: {exc}"
         except _requests.exceptions.Timeout:

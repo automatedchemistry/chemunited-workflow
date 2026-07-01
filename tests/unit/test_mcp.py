@@ -67,3 +67,68 @@ def test_process_schema_tools_return_serialized_typed_defaults(tmp_path):
         schema["main_parameter_schema"]["properties"]["main_flow_rate"]["default"]
         == "0.2 milliliter / minute"
     )
+
+
+def _write_valid_protocols_package(project_dir):
+    protocols_dir = project_dir / "protocols"
+    protocols_dir.mkdir()
+    (protocols_dir / "__init__.py").write_text(
+        "PROCESSES = {}\nCONFIGS = {}\n", encoding="utf-8"
+    )
+    (protocols_dir / "main_parameters.py").write_text(
+        "class MainParameter:\n    pass\n", encoding="utf-8"
+    )
+
+
+def test_load_project_tool_success(tmp_path):
+    _write_valid_protocols_package(tmp_path)
+
+    holder = ProjectHolder()
+    server = create_mcp_server(holder=holder)
+
+    result = _mcp_payload(
+        asyncio.run(server.call_tool("load_project", {"project_dir": str(tmp_path)}))
+    )
+
+    assert result["project_dir"] == str(tmp_path.resolve())
+    assert holder.is_loaded()
+
+
+def test_load_project_tool_syntax_error(tmp_path):
+    protocols_dir = tmp_path / "protocols"
+    protocols_dir.mkdir()
+    (protocols_dir / "__init__.py").write_text(
+        "def broken(:\n    pass\n", encoding="utf-8"
+    )
+    (protocols_dir / "main_parameters.py").write_text(
+        "class MainParameter:\n    pass\n", encoding="utf-8"
+    )
+
+    holder = ProjectHolder()
+    server = create_mcp_server(holder=holder)
+
+    result = _mcp_payload(
+        asyncio.run(server.call_tool("load_project", {"project_dir": str(tmp_path)}))
+    )
+
+    assert "SyntaxError" in result["error"]
+    assert not holder.is_loaded()
+
+
+def test_load_project_tool_service_init_failure(tmp_path, mocker):
+    _write_valid_protocols_package(tmp_path)
+    mocker.patch(
+        "chemunited_workflow.api.project_holder.ProtocolService",
+        side_effect=RuntimeError("boom"),
+    )
+
+    holder = ProjectHolder()
+    server = create_mcp_server(holder=holder)
+
+    result = _mcp_payload(
+        asyncio.run(server.call_tool("load_project", {"project_dir": str(tmp_path)}))
+    )
+
+    assert "Failed to initialize services" in result["error"]
+    assert "RuntimeError: boom" in result["error"]
+    assert not holder.is_loaded()

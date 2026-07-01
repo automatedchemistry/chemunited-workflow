@@ -7,7 +7,11 @@ from pathlib import Path
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import Response
 
-from chemunited_workflow.project_loader import ProjectLoadError, load_project
+from chemunited_workflow.project_loader import (
+    ProjectLoadError,
+    format_broken_project_error,
+    load_project,
+)
 
 from ..dependencies import get_project_holder
 from ..project_holder import ProjectHolder
@@ -50,7 +54,17 @@ async def put_project(
     except ProjectLoadError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
-    holder.load(modules)
+    try:
+        holder.load(modules)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=422,
+            detail=format_broken_project_error(
+                exc,
+                project_path,
+                f"Failed to initialize services for project '{project_path}'",
+            ),
+        ) from exc
     return ProjectOut(project_dir=str(holder.project_dir))
 
 

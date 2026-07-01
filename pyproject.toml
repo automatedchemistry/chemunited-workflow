@@ -43,9 +43,10 @@ pythonpath = ["."]
 norecursedirs = ["pytest-tmp-cli", ".pytest_cache", ".venv", "build", "dist"]
 
 [tool.setuptools.package-data]
-"chemunited_workflow" = ["web/index.html", "web/chemunited.ico", "web/assets/*"]
+"chemunited_workflow" = ["web/index.html", "web/chemunited.ico", "web/assets/*", "py.typed"]
 
 [tool.setuptools]
+package-dir = {"" = "."}
 packages = [
     "chemunited_workflow",
     "chemunited_workflow.api",

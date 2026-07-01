@@ -13,7 +13,11 @@ from pathlib import Path
 
 import click
 
-from chemunited_workflow.project_loader import ProjectLoadError, load_project
+from chemunited_workflow.project_loader import (
+    ProjectLoadError,
+    format_broken_project_error,
+    load_project,
+)
 
 _DEFAULT_ICON_PATH = Path(__file__).parent / "chemunited.svg"
 
@@ -304,7 +308,17 @@ def serve(
             modules = load_project(project_dir)
         except ProjectLoadError as exc:
             raise click.BadParameter(str(exc), param_hint="project_dir") from exc
-        app.dependency_overrides[get_project_holder]().load(modules)
+        try:
+            app.dependency_overrides[get_project_holder]().load(modules)
+        except Exception as exc:
+            raise click.BadParameter(
+                format_broken_project_error(
+                    exc,
+                    project_dir,
+                    f"Failed to initialize services for project '{project_dir}'",
+                ),
+                param_hint="project_dir",
+            ) from exc
 
     zc = None
     zc_info = None

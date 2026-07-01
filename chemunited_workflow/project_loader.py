@@ -5,8 +5,11 @@ from __future__ import annotations
 import importlib
 import sys
 import threading
+import traceback
 from pathlib import Path
 from typing import NamedTuple
+
+from loguru import logger
 
 _import_lock = threading.Lock()
 
@@ -20,6 +23,48 @@ class ProjectModules(NamedTuple):
     processes: dict
     configs: dict
     main_parameter_class: type
+
+
+def _relativize(path_str: str, project_dir: Path) -> str:
+    try:
+        return str(Path(path_str).relative_to(project_dir))
+    except ValueError:
+        return path_str
+
+
+def format_broken_project_error(
+    exc: BaseException, project_dir: Path, context: str
+) -> str:
+    """Format *exc* as `context` plus a traceback trimmed to frames inside *project_dir*.
+
+    Also logs the full, untrimmed exception via loguru for server-side visibility.
+    Must be called from inside the ``except`` block handling *exc*.
+    """
+    logger.exception(context)
+    lines: list[str] = []
+
+    if isinstance(exc, SyntaxError) and exc.filename:
+        lines.append(
+            f'  File "{_relativize(exc.filename, project_dir)}", line {exc.lineno}\n'
+        )
+        if exc.text:
+            lines.append(f"    {exc.text.rstrip(chr(10))}\n")
+            if exc.offset:
+                lines.append(f"    {' ' * (exc.offset - 1)}^\n")
+    else:
+        te = traceback.TracebackException.from_exception(exc)
+        for frame in te.stack:
+            if not frame.filename.startswith(str(project_dir)):
+                continue
+            lines.append(
+                f'  File "{_relativize(frame.filename, project_dir)}", '
+                f"line {frame.lineno}, in {frame.name}\n"
+            )
+            if frame.line:
+                lines.append(f"    {frame.line}\n")
+
+    lines.append(f"{type(exc).__name__}: {exc}")
+    return f"{context}:\n{''.join(lines)}"
 
 
 def load_project(project_dir: Path) -> ProjectModules:
@@ -55,9 +100,13 @@ def load_project(project_dir: Path) -> ProjectModules:
                     del sys.modules[key]
             protocols = importlib.import_module("protocols")
             protocols_mp = importlib.import_module("protocols.main_parameters")
-        except ImportError as exc:
+        except Exception as exc:
             raise ProjectLoadError(
-                f"Failed to import 'protocols' from '{project_dir}': {exc}"
+                format_broken_project_error(
+                    exc,
+                    project_dir,
+                    f"Failed to import 'protocols' from '{project_dir}'",
+                )
             ) from exc
         finally:
             sys.path.remove(str_dir)

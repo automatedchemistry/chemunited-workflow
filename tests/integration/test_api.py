@@ -601,9 +601,13 @@ def test_ping_component_online(client, mocker):
         "status_code": 200,
         "latency_ms": 50,
         "error": None,
+        "reachability": None,
+        "reachability_supported": None,
     }
-    mocked_get.assert_called_once_with(
-        "http://device-server:8000/sim-ml600/pump", timeout=2.0
+    assert mocked_get.call_count == 2
+    mocked_get.assert_any_call("http://device-server:8000/sim-ml600/pump", timeout=2.0)
+    mocked_get.assert_any_call(
+        "http://device-server:8000/sim-ml600/pump/is-reachable", timeout=2.0
     )
 
 
@@ -638,6 +642,8 @@ def test_ping_component_unconfigured(client, mocker):
         "status_code": None,
         "latency_ms": None,
         "error": "not configured",
+        "reachability": None,
+        "reachability_supported": None,
     }
     mocked_get.assert_not_called()
 
@@ -646,3 +652,113 @@ def test_ping_component_missing(client):
     r = client.get("/components/ping/ghost")
 
     assert r.status_code == 404
+
+
+def test_ping_component_reachability_online(client, mocker):
+    base_resp = mocker.MagicMock()
+    base_resp.status_code = 200
+    base_resp.elapsed.total_seconds.return_value = 0.05
+
+    reach_resp = mocker.MagicMock()
+    reach_resp.status_code = 200
+    reach_resp.ok = True
+    reach_resp.json.return_value = "online"
+
+    mocker.patch(
+        "chemunited_workflow.api.services.protocol._requests.get",
+        side_effect=[base_resp, reach_resp],
+    )
+
+    r = client.get("/components/ping/pump")
+
+    assert r.status_code == 200
+    data = r.json()
+    assert data["reachability"] == "online"
+    assert data["reachability_supported"] is True
+
+
+def test_ping_component_reachability_not_supported(client, mocker):
+    base_resp = mocker.MagicMock()
+    base_resp.status_code = 200
+    base_resp.elapsed.total_seconds.return_value = 0.05
+
+    reach_resp = mocker.MagicMock()
+    reach_resp.status_code = 404
+    reach_resp.ok = False
+
+    mocker.patch(
+        "chemunited_workflow.api.services.protocol._requests.get",
+        side_effect=[base_resp, reach_resp],
+    )
+
+    r = client.get("/components/ping/pump")
+
+    assert r.status_code == 200
+    data = r.json()
+    assert data["online"] is True
+    assert data["reachability"] is None
+    assert data["reachability_supported"] is False
+
+
+# ── /project ─────────────────────────────────────────────────────────────────
+
+
+def _write_valid_protocols_package(project_dir: Path) -> None:
+    protocols_dir = project_dir / "protocols"
+    protocols_dir.mkdir()
+    (protocols_dir / "__init__.py").write_text(
+        "PROCESSES = {}\nCONFIGS = {}\n", encoding="utf-8"
+    )
+    (protocols_dir / "main_parameters.py").write_text(
+        "class MainParameter:\n    pass\n", encoding="utf-8"
+    )
+
+
+def test_put_project_success(tmp_path):
+    _write_valid_protocols_package(tmp_path)
+    app = create_api()
+    with TestClient(app) as bare_client:
+        r = bare_client.put("/project/", json={"project_dir": str(tmp_path)})
+    assert r.status_code == 200
+    assert r.json()["project_dir"] == str(tmp_path.resolve())
+
+
+def test_put_project_missing_files(tmp_path):
+    app = create_api()
+    with TestClient(app) as bare_client:
+        r = bare_client.put("/project/", json={"project_dir": str(tmp_path)})
+    assert r.status_code == 422
+    assert "protocols/__init__.py" in r.json()["detail"]
+
+
+def test_put_project_syntax_error(tmp_path):
+    protocols_dir = tmp_path / "protocols"
+    protocols_dir.mkdir()
+    (protocols_dir / "__init__.py").write_text(
+        "def broken(:\n    pass\n", encoding="utf-8"
+    )
+    (protocols_dir / "main_parameters.py").write_text(
+        "class MainParameter:\n    pass\n", encoding="utf-8"
+    )
+    app = create_api()
+    with TestClient(app) as bare_client:
+        r = bare_client.put("/project/", json={"project_dir": str(tmp_path)})
+    assert r.status_code == 422
+    detail = r.json()["detail"]
+    assert "SyntaxError" in detail
+    assert str(Path("protocols") / "__init__.py") in detail
+
+
+def test_put_project_service_init_failure(tmp_path, mocker):
+    _write_valid_protocols_package(tmp_path)
+    mocker.patch(
+        "chemunited_workflow.api.project_holder.ProtocolService",
+        side_effect=RuntimeError("boom"),
+    )
+    app = create_api()
+    with TestClient(app) as bare_client:
+        r = bare_client.put("/project/", json={"project_dir": str(tmp_path)})
+    assert r.status_code == 422
+    detail = r.json()["detail"]
+    assert "Failed to initialize services" in detail
+    assert "RuntimeError: boom" in detail
