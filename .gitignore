@@ -224,3 +224,4 @@ pytest-tmp-*
 # pycharm
 .idea
 .old_html
+CLAUDE.md
