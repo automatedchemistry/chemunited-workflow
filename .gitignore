@@ -223,5 +223,4 @@ pytest-tmp-*
 
 # pycharm
 .idea
-.web-chemunited
 .old_html
