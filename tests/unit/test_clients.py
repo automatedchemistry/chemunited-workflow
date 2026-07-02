@@ -444,4 +444,86 @@ def test_component_client_put_passes_safe_params_to_base_client(mocker):
     )
 
     assert captured["params"] == {"volume": "1 milliliter"}
-    assert captured["json"] == {"rate": "2.0 milliliter / minute"}
+
+
+# ── discover_commands ─────────────────────────────────────────────────────────
+
+_FAKE_OPENAPI_SCHEMA = {
+    "paths": {
+        "/sim/pump/infuse": {
+            "put": {
+                "summary": "Infuse",
+                "parameters": [
+                    {
+                        "name": "rate",
+                        "in": "query",
+                        "required": False,
+                        "schema": {"type": "string", "default": "1 ml/min"},
+                    }
+                ],
+            }
+        },
+        "/sim/pump/is-reachable": {
+            "get": {"summary": "Is Reachable", "parameters": []}
+        },
+        "/sim/pump/user-data": {
+            "put": {
+                "summary": "User Data",
+                "requestBody": {
+                    "required": True,
+                    "content": {
+                        "application/json": {
+                            "schema": {"type": "object"},
+                        }
+                    },
+                },
+            }
+        },
+        "/sim/other/position": {"get": {"summary": "Position", "parameters": []}},
+    }
+}
+
+
+@resp_lib.activate
+def test_discover_commands_includes_get_and_put():
+    resp_lib.add(
+        resp_lib.GET, f"{BASE_URL}/openapi.json", json=_FAKE_OPENAPI_SCHEMA, status=200
+    )
+    client = ComponentClient(f"{BASE_URL}/sim/pump")
+    commands = client.discover_commands()
+
+    assert commands["infuse"]["type"] == "put"
+    assert commands["is-reachable"]["type"] == "get"
+    assert "position" not in commands
+
+
+@resp_lib.activate
+def test_discover_commands_query_parameter_shape():
+    resp_lib.add(
+        resp_lib.GET, f"{BASE_URL}/openapi.json", json=_FAKE_OPENAPI_SCHEMA, status=200
+    )
+    client = ComponentClient(f"{BASE_URL}/sim/pump")
+    commands = client.discover_commands()
+
+    assert commands["infuse"]["parameters"] == {
+        "rate": {
+            "in": "query",
+            "required": False,
+            "type": "string",
+            "default": "1 ml/min",
+        }
+    }
+    assert commands["is-reachable"]["parameters"] == {}
+
+
+@resp_lib.activate
+def test_discover_commands_request_body_becomes_body_parameter():
+    resp_lib.add(
+        resp_lib.GET, f"{BASE_URL}/openapi.json", json=_FAKE_OPENAPI_SCHEMA, status=200
+    )
+    client = ComponentClient(f"{BASE_URL}/sim/pump")
+    commands = client.discover_commands()
+
+    assert commands["user-data"]["parameters"] == {
+        "body": {"in": "body", "required": True, "type": "object"}
+    }

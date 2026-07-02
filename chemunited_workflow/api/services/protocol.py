@@ -16,6 +16,7 @@ from pydantic.json_schema import PydanticJsonSchemaWarning
 from pydantic_core import PydanticUndefined
 
 from chemunited_workflow import Process
+from chemunited_workflow.platform import Platform
 
 
 class ProtocolService:
@@ -321,6 +322,77 @@ class ProtocolService:
                 full_url = f"{server_url}/{component_url}"
                 return self._ping_url(component_name, full_url, timeout)
         raise KeyError(f"Component '{component_name}' not found in associations.")
+
+    def get_component_commands(
+        self, component_name: str, timeout: float = 5.0
+    ) -> dict[str, dict[str, Any]]:
+        platform = Platform.from_project_dir(self._project_dir)
+        client = platform[component_name]
+        return client.discover_commands(timeout=timeout)
+
+    def send_component_command(
+        self,
+        component_name: str,
+        command: str,
+        verb: str,
+        params: dict[str, Any] | None = None,
+        json_body: Any | None = None,
+        timeout: float = 5.0,
+    ) -> dict[str, Any]:
+        """Issue an ad-hoc command directly against a component's device server.
+
+        Deliberately bypasses ``Platform``/``ComponentClient`` — those enforce
+        a non-blocking per-device lock meant to serialize protocol execution
+        and log to ``log/pool/*.jsonl``, which the runner drains/deletes.
+        Same rationale as ``MonitoringService`` (see its module docstring):
+        an ad-hoc UI-triggered command must not contend with an in-progress
+        protocol run's lock or pollute its pool log.
+        """
+        connectivity = self.read_components()
+        server_url = connectivity["server_url"].rstrip("/")
+        component_url = None
+        for assoc in connectivity["associations"]:
+            if assoc["component"] == component_name:
+                component_url = assoc.get("component_url", "").strip()
+                break
+        else:
+            raise KeyError(f"Component '{component_name}' not found in associations.")
+        if not component_url:
+            raise ValueError(f"Component '{component_name}' has no configured URL.")
+
+        url = f"{server_url}/{component_url}/{command.lstrip('/')}"
+        entry: dict[str, Any] = {
+            "component": component_name,
+            "command": command,
+            "url": url,
+            "ok": False,
+            "status_code": None,
+            "latency_ms": None,
+            "response": None,
+            "error": None,
+        }
+        method = _requests.put if verb == "put" else _requests.get
+        kwargs: dict[str, Any] = {"timeout": timeout, "params": params or None}
+        if verb == "put":
+            kwargs["json"] = json_body
+        try:
+            response = method(url, **kwargs)
+            entry["status_code"] = response.status_code
+            entry["latency_ms"] = round(response.elapsed.total_seconds() * 1000)
+            entry["ok"] = response.ok
+            try:
+                entry["response"] = response.json()
+            except ValueError:
+                entry["response"] = response.text
+            if not response.ok:
+                entry["error"] = f"HTTP {response.status_code}"
+        except _requests.exceptions.ConnectionError as exc:
+            entry["error"] = f"ConnectionError: {exc}"
+        except _requests.exceptions.Timeout:
+            entry["error"] = f"Timeout after {timeout}s"
+        except _requests.exceptions.RequestException as exc:
+            entry["error"] = str(exc)
+        return entry
 
     def read_log(self, filename: str, tail: int | None = None) -> str:
         log_dir = self._log_dir.resolve()

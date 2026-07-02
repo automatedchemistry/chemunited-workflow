@@ -9,6 +9,7 @@ from collections.abc import Mapping
 from dataclasses import asdict, is_dataclass
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 import requests
 from loguru import logger
@@ -178,6 +179,66 @@ class BaseClient:
 
     def post(self, path: str, *, params=None, json=None, **kwargs) -> requests.Response:
         return self._request("POST", path, params=params, json=json, **kwargs)
+
+    def discover_commands(self, timeout: float = 5.0) -> dict[str, dict[str, Any]]:
+        """Return this component's exposed commands, keyed by command name.
+
+        FastAPI/flowchem-specific: fetches the device server's live
+        ``openapi.json`` (served at the server root, not per-component) and
+        filters it down to paths under this client's own ``base_url``. A
+        different client implementation (e.g. SILA, OPC-UA) would override
+        this method with its own protocol-appropriate discovery mechanism.
+        """
+        parts = urlsplit(self.base_url)
+        root = f"{parts.scheme}://{parts.netloc}"
+        prefix = parts.path.rstrip("/") + "/"
+
+        response = self._session.request("GET", f"{root}/openapi.json", timeout=timeout)
+        response.raise_for_status()
+        schema = response.json()
+
+        commands: dict[str, dict[str, Any]] = {}
+        for path, methods in schema.get("paths", {}).items():
+            if not path.startswith(prefix) or not isinstance(methods, dict):
+                continue
+            command = path[len(prefix) :]
+            for verb in ("get", "put"):
+                op = methods.get(verb)
+                if op is None:
+                    continue
+                commands[command] = {
+                    "type": verb,
+                    "parameters": self._extract_parameters(op),
+                }
+        return commands
+
+    @staticmethod
+    def _extract_parameters(op: dict[str, Any]) -> dict[str, dict[str, Any]]:
+        parameters: dict[str, dict[str, Any]] = {}
+        for param in op.get("parameters", []):
+            param_schema = param.get("schema", {})
+            entry: dict[str, Any] = {
+                "in": param.get("in", "query"),
+                "required": param.get("required", False),
+                "type": param_schema.get("type"),
+            }
+            if "default" in param_schema:
+                entry["default"] = param_schema["default"]
+            parameters[param["name"]] = entry
+
+        request_body = op.get("requestBody")
+        if request_body:
+            body_schema = (
+                request_body.get("content", {})
+                .get("application/json", {})
+                .get("schema", {})
+            )
+            parameters["body"] = {
+                "in": "body",
+                "required": request_body.get("required", False),
+                "type": body_schema.get("type"),
+            }
+        return parameters
 
 
 class ComponentClient(BaseClient):

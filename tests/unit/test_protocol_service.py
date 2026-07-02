@@ -10,6 +10,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 import requests
+import responses as resp_lib
 from chemunited_quantities import ChemQuantityValidator, ChemUnitQuantity
 from pydantic import AliasChoices, BaseModel, Field
 from pydantic.json_schema import PydanticJsonSchemaWarning
@@ -432,3 +433,133 @@ def test_write_protocol_preserves_explicit_main_parameter(svc, tmp_path):
     filename = svc.write_protocol("test", {"main_parameter": {"x": 42.0}})
     data = json.loads((tmp_path / "protocols_historic" / filename).read_text())
     assert data["main_parameter"] == {"x": 42.0}
+
+
+# ── get_component_commands ────────────────────────────────────────────────────
+
+_FAKE_SCHEMA = {
+    "paths": {
+        "/sim/pump/infuse": {
+            "put": {
+                "parameters": [
+                    {
+                        "name": "rate",
+                        "in": "query",
+                        "required": False,
+                        "schema": {"type": "string", "default": "1 ml/min"},
+                    }
+                ]
+            }
+        },
+        "/sim/pump/is-reachable": {"get": {"parameters": []}},
+        "/sim/valve/position": {"get": {"parameters": []}},
+    }
+}
+
+
+@resp_lib.activate
+def test_get_component_commands_returns_commands_for_component(svc):
+    resp_lib.add(
+        resp_lib.GET,
+        "http://device-server:8000/openapi.json",
+        json=_FAKE_SCHEMA,
+        status=200,
+    )
+    commands = svc.get_component_commands("pump")
+
+    assert commands["infuse"]["type"] == "put"
+    assert commands["infuse"]["parameters"]["rate"]["default"] == "1 ml/min"
+    assert commands["is-reachable"]["type"] == "get"
+    assert "position" not in commands
+
+
+def test_get_component_commands_unknown_component_raises(svc):
+    with pytest.raises(KeyError):
+        svc.get_component_commands("ghost")
+
+
+# ── send_component_command ──────────────────────────────────────────────────
+
+
+def _command_response(
+    status_code: int,
+    json_body: object | None = None,
+    text_body: str = "",
+    elapsed_ms: float = 50.0,
+) -> MagicMock:
+    resp = MagicMock()
+    resp.status_code = status_code
+    resp.ok = 200 <= status_code < 300
+    resp.elapsed.total_seconds.return_value = elapsed_ms / 1000.0
+    if json_body is not None:
+        resp.json.return_value = json_body
+    else:
+        resp.json.side_effect = ValueError("no json")
+        resp.text = text_body
+    return resp
+
+
+def test_send_component_command_get_success(svc):
+    with patch(
+        f"{_MODULE}.get", return_value=_command_response(200, json_body="online")
+    ):
+        result = svc.send_component_command("pump", "is-reachable", "get")
+
+    assert result["ok"] is True
+    assert result["status_code"] == 200
+    assert result["response"] == "online"
+    assert result["url"] == "http://device-server:8000/sim/pump/is-reachable"
+    assert result["error"] is None
+
+
+def test_send_component_command_put_success(svc):
+    with patch(
+        f"{_MODULE}.put",
+        return_value=_command_response(200, json_body={"rate": "5 ml/min"}),
+    ) as mock_put:
+        result = svc.send_component_command(
+            "pump", "infuse", "put", params={"rate": "5 ml/min"}
+        )
+
+    assert result["ok"] is True
+    assert result["response"] == {"rate": "5 ml/min"}
+    mock_put.assert_called_once_with(
+        "http://device-server:8000/sim/pump/infuse",
+        timeout=5.0,
+        params={"rate": "5 ml/min"},
+        json=None,
+    )
+
+
+def test_send_component_command_non_json_response_falls_back_to_text(svc):
+    with patch(f"{_MODULE}.get", return_value=_command_response(200, text_body="OK")):
+        result = svc.send_component_command("pump", "raw", "get")
+    assert result["response"] == "OK"
+
+
+def test_send_component_command_error_status(svc):
+    with patch(f"{_MODULE}.get", return_value=_command_response(503, json_body={})):
+        result = svc.send_component_command("pump", "infuse", "get")
+    assert result["ok"] is False
+    assert result["status_code"] == 503
+    assert result["error"] == "HTTP 503"
+
+
+def test_send_component_command_connection_error(svc):
+    with patch(
+        f"{_MODULE}.get", side_effect=requests.exceptions.ConnectionError("refused")
+    ):
+        result = svc.send_component_command("pump", "infuse", "get")
+    assert result["ok"] is False
+    assert result["status_code"] is None
+    assert result["error"].startswith("ConnectionError")
+
+
+def test_send_component_command_unknown_component_raises(svc):
+    with pytest.raises(KeyError):
+        svc.send_component_command("ghost", "infuse", "get")
+
+
+def test_send_component_command_unconfigured_component_raises(svc):
+    with pytest.raises(ValueError):
+        svc.send_component_command("empty", "infuse", "get")

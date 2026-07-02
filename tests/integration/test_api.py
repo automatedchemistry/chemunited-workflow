@@ -9,6 +9,7 @@ import time
 from pathlib import Path
 
 import pytest
+import responses as resp_lib
 from fastapi.testclient import TestClient
 
 from chemunited_workflow.api import create_api
@@ -698,6 +699,84 @@ def test_ping_component_reachability_not_supported(client, mocker):
     assert data["online"] is True
     assert data["reachability"] is None
     assert data["reachability_supported"] is False
+
+
+# ── /components/commands ─────────────────────────────────────────────────────
+
+_FAKE_OPENAPI_SCHEMA = {
+    "paths": {
+        "/sim-ml600/pump/infuse": {
+            "put": {
+                "parameters": [
+                    {
+                        "name": "rate",
+                        "in": "query",
+                        "required": False,
+                        "schema": {"type": "string", "default": "1 ml/min"},
+                    }
+                ]
+            }
+        },
+        "/sim-ml600/pump/is-reachable": {"get": {"parameters": []}},
+    }
+}
+
+
+@resp_lib.activate
+def test_get_component_commands(client):
+    resp_lib.add(
+        resp_lib.GET,
+        "http://device-server:8000/openapi.json",
+        json=_FAKE_OPENAPI_SCHEMA,
+        status=200,
+    )
+
+    r = client.get("/components/commands/pump")
+
+    assert r.status_code == 200
+    data = r.json()
+    assert data["infuse"]["type"] == "put"
+    assert data["infuse"]["parameters"]["rate"]["default"] == "1 ml/min"
+    assert data["is-reachable"]["type"] == "get"
+
+
+def test_get_component_commands_missing(client):
+    r = client.get("/components/commands/ghost")
+    assert r.status_code == 404
+
+
+def test_send_component_command(client, mocker):
+    resp = mocker.MagicMock()
+    resp.status_code = 200
+    resp.ok = True
+    resp.elapsed.total_seconds.return_value = 0.05
+    resp.json.return_value = {"rate": "5 ml/min"}
+    mocker.patch(
+        "chemunited_workflow.api.services.protocol._requests.put",
+        return_value=resp,
+    )
+
+    r = client.post(
+        "/components/commands/pump/infuse",
+        json={"verb": "put", "params": {"rate": "5 ml/min"}},
+    )
+
+    assert r.status_code == 200
+    data = r.json()
+    assert data["ok"] is True
+    assert data["status_code"] == 200
+    assert data["response"] == {"rate": "5 ml/min"}
+    assert data["url"] == "http://device-server:8000/sim-ml600/pump/infuse"
+
+
+def test_send_component_command_missing(client):
+    r = client.post("/components/commands/ghost/infuse", json={"verb": "get"})
+    assert r.status_code == 404
+
+
+def test_send_component_command_unconfigured(client):
+    r = client.post("/components/commands/sensor/read", json={"verb": "get"})
+    assert r.status_code == 409
 
 
 # ── /project ─────────────────────────────────────────────────────────────────

@@ -109,6 +109,23 @@ class ComponentStatus(BaseModel):
     reachability_supported: bool | None = None
 
 
+class ComponentCommandIn(BaseModel):
+    verb: Literal["get", "put"]
+    params: dict[str, Any] | None = None
+    body: Any | None = None
+
+
+class ComponentCommandResult(BaseModel):
+    component: str
+    command: str
+    url: str
+    ok: bool
+    status_code: int | None = None
+    latency_ms: int | None = None
+    response: Any | None = None
+    error: str | None = None
+
+
 class ProjectIn(BaseModel):
     project_dir: str
 
