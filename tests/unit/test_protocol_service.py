@@ -452,6 +452,10 @@ _FAKE_SCHEMA = {
             }
         },
         "/sim/pump/is-reachable": {"get": {"parameters": []}},
+        "/sim/pump/position": {
+            "get": {"parameters": []},
+            "put": {"parameters": []},
+        },
         "/sim/valve/position": {"get": {"parameters": []}},
     }
 }
@@ -467,10 +471,11 @@ def test_get_component_commands_returns_commands_for_component(svc):
     )
     commands = svc.get_component_commands("pump")
 
-    assert commands["infuse"]["type"] == "put"
-    assert commands["infuse"]["parameters"]["rate"]["default"] == "1 ml/min"
-    assert commands["is-reachable"]["type"] == "get"
-    assert "position" not in commands
+    assert commands["infuse_put"]["type"] == "put"
+    assert commands["infuse_put"]["parameters"]["rate"]["default"] == "1 ml/min"
+    assert commands["is-reachable_get"]["type"] == "get"
+    assert commands["position_get"]["name"] == "position"
+    assert commands["position_put"]["name"] == "position"
 
 
 def test_get_component_commands_unknown_component_raises(svc):

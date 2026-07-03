@@ -181,13 +181,18 @@ class BaseClient:
         return self._request("POST", path, params=params, json=json, **kwargs)
 
     def discover_commands(self, timeout: float = 5.0) -> dict[str, dict[str, Any]]:
-        """Return this component's exposed commands, keyed by command name.
+        """Return this component's exposed commands, keyed by ``{command}_{verb}``.
 
         FastAPI/flowchem-specific: fetches the device server's live
         ``openapi.json`` (served at the server root, not per-component) and
         filters it down to paths under this client's own ``base_url``. A
         different client implementation (e.g. SILA, OPC-UA) would override
         this method with its own protocol-appropriate discovery mechanism.
+
+        A command path can expose both ``get`` and ``put`` (e.g. ``position``),
+        so entries are keyed by ``{command}_{verb}`` rather than by the bare
+        command name to avoid one verb overwriting the other; the raw command
+        name is preserved in each entry's ``"name"`` field.
         """
         parts = urlsplit(self.base_url)
         root = f"{parts.scheme}://{parts.netloc}"
@@ -206,7 +211,8 @@ class BaseClient:
                 op = methods.get(verb)
                 if op is None:
                     continue
-                commands[command] = {
+                commands[f"{command}_{verb}"] = {
+                    "name": command,
                     "type": verb,
                     "parameters": self._extract_parameters(op),
                 }

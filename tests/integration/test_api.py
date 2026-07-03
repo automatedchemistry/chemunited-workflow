@@ -718,6 +718,10 @@ _FAKE_OPENAPI_SCHEMA = {
             }
         },
         "/sim-ml600/pump/is-reachable": {"get": {"parameters": []}},
+        "/sim-ml600/pump/position": {
+            "get": {"parameters": []},
+            "put": {"parameters": []},
+        },
     }
 }
 
@@ -735,9 +739,11 @@ def test_get_component_commands(client):
 
     assert r.status_code == 200
     data = r.json()
-    assert data["infuse"]["type"] == "put"
-    assert data["infuse"]["parameters"]["rate"]["default"] == "1 ml/min"
-    assert data["is-reachable"]["type"] == "get"
+    assert data["infuse_put"]["type"] == "put"
+    assert data["infuse_put"]["parameters"]["rate"]["default"] == "1 ml/min"
+    assert data["is-reachable_get"]["type"] == "get"
+    assert data["position_get"]["name"] == "position"
+    assert data["position_put"]["name"] == "position"
 
 
 def test_get_component_commands_missing(client):

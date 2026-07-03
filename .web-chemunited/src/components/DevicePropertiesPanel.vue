@@ -7,12 +7,18 @@ interface CommandParameter {
 }
 
 interface CommandMeta {
+  name: string
   type: 'get' | 'put'
   parameters: Record<string, CommandParameter>
 }
 
-interface DeviceCommand extends CommandMeta {
-  name: string
+type DeviceCommand = CommandMeta
+
+// Commands are keyed by name alone in `commands`/`commandInputs`/`sending`,
+// but a path can expose both a `get` and a `put` command (e.g. `position`) —
+// combine name and verb so those don't collide.
+function commandKey(command: DeviceCommand): string {
+  return `${command.type}_${command.name}`
 }
 
 // Module-level cache — persists across mount/unmount (no re-fetch on device revisit).
@@ -159,7 +165,7 @@ function applyCommands(list: DeviceCommand[]) {
         paramInputs[paramName] = String(paramMeta.default)
       }
     }
-    inputs[command.name] = paramInputs
+    inputs[commandKey(command)] = paramInputs
   }
   commandInputs.value = inputs
   commands.value = list
@@ -191,7 +197,7 @@ async function loadCommands(device: PlatformDevice) {
       return
     }
     const data = await response.json() as Record<string, CommandMeta>
-    const list = Object.entries(data).map(([name, meta]) => ({ name, ...meta }))
+    const list = Object.values(data)
     _commandsCache.set(device.id, list)
     applyCommands(list)
   } catch {
@@ -202,11 +208,11 @@ async function loadCommands(device: PlatformDevice) {
 }
 
 async function sendCommand(command: DeviceCommand) {
-  sending.value = command.name
+  sending.value = commandKey(command)
   sendError.value = ''
   lastResult.value = null
 
-  const inputs = commandInputs.value[command.name] ?? {}
+  const inputs = commandInputs.value[commandKey(command)] ?? {}
   const params: Record<string, string> = {}
   let body: unknown = null
 
@@ -283,7 +289,7 @@ watch(() => props.device, device => {
         <p v-else-if="commandsError" class="error-text">{{ commandsError }}</p>
         <p v-else-if="!commands.length" class="muted">No commands available.</p>
         <div v-else class="commands-stack">
-          <div v-for="command in commands" :key="command.name" class="command-block">
+          <div v-for="command in commands" :key="commandKey(command)" class="command-block">
             <div class="command-block-header">
               <span class="verb-badge" :class="command.type">{{ command.type.toUpperCase() }}</span>
               <span class="command-name">{{ command.name }}</span>
@@ -297,14 +303,14 @@ watch(() => props.device, device => {
                 <span>{{ paramName }}<span v-if="paramMeta.required">*</span></span>
                 <textarea
                   v-if="paramMeta.in === 'body'"
-                  v-model="commandInputs[command.name]![paramName]"
+                  v-model="commandInputs[commandKey(command)]![paramName]"
                   rows="2"
                   placeholder="JSON body"
                 />
                 <input
                   v-else
                   type="text"
-                  v-model="commandInputs[command.name]![paramName]"
+                  v-model="commandInputs[commandKey(command)]![paramName]"
                   :placeholder="paramMeta.default !== undefined ? String(paramMeta.default) : paramMeta.type ?? ''"
                 />
               </label>
@@ -312,10 +318,10 @@ watch(() => props.device, device => {
             <button
               type="button"
               class="send-button"
-              :disabled="sending === command.name"
+              :disabled="sending === commandKey(command)"
               @click="sendCommand(command)"
             >
-              {{ sending === command.name ? 'Sending…' : 'Send' }}
+              {{ sending === commandKey(command) ? 'Sending…' : 'Send' }}
             </button>
           </div>
         </div>

@@ -479,6 +479,10 @@ _FAKE_OPENAPI_SCHEMA = {
                 },
             }
         },
+        "/sim/pump/position": {
+            "get": {"summary": "Get Position", "parameters": []},
+            "put": {"summary": "Set Position", "parameters": []},
+        },
         "/sim/other/position": {"get": {"summary": "Position", "parameters": []}},
     }
 }
@@ -492,9 +496,29 @@ def test_discover_commands_includes_get_and_put():
     client = ComponentClient(f"{BASE_URL}/sim/pump")
     commands = client.discover_commands()
 
-    assert commands["infuse"]["type"] == "put"
-    assert commands["is-reachable"]["type"] == "get"
+    assert commands["infuse_put"]["type"] == "put"
+    assert commands["is-reachable_get"]["type"] == "get"
     assert "position" not in commands
+
+
+@resp_lib.activate
+def test_discover_commands_same_path_get_and_put_both_kept():
+    resp_lib.add(
+        resp_lib.GET, f"{BASE_URL}/openapi.json", json=_FAKE_OPENAPI_SCHEMA, status=200
+    )
+    client = ComponentClient(f"{BASE_URL}/sim/pump")
+    commands = client.discover_commands()
+
+    assert commands["position_get"] == {
+        "name": "position",
+        "type": "get",
+        "parameters": {},
+    }
+    assert commands["position_put"] == {
+        "name": "position",
+        "type": "put",
+        "parameters": {},
+    }
 
 
 @resp_lib.activate
@@ -505,7 +529,7 @@ def test_discover_commands_query_parameter_shape():
     client = ComponentClient(f"{BASE_URL}/sim/pump")
     commands = client.discover_commands()
 
-    assert commands["infuse"]["parameters"] == {
+    assert commands["infuse_put"]["parameters"] == {
         "rate": {
             "in": "query",
             "required": False,
@@ -513,7 +537,7 @@ def test_discover_commands_query_parameter_shape():
             "default": "1 ml/min",
         }
     }
-    assert commands["is-reachable"]["parameters"] == {}
+    assert commands["is-reachable_get"]["parameters"] == {}
 
 
 @resp_lib.activate
@@ -524,6 +548,6 @@ def test_discover_commands_request_body_becomes_body_parameter():
     client = ComponentClient(f"{BASE_URL}/sim/pump")
     commands = client.discover_commands()
 
-    assert commands["user-data"]["parameters"] == {
+    assert commands["user-data_put"]["parameters"] == {
         "body": {"in": "body", "required": True, "type": "object"}
     }
