@@ -81,7 +81,11 @@ class FakeNode:
         self.set_calls.append(value)
 
     def get_access_level(self):
-        return {ua.AccessLevel.CurrentWrite} if self._writable else {ua.AccessLevel.CurrentRead}
+        return (
+            {ua.AccessLevel.CurrentWrite}
+            if self._writable
+            else {ua.AccessLevel.CurrentRead}
+        )
 
     def read_data_type_as_variant_type(self):
         return self._variant_type
@@ -133,7 +137,9 @@ def _reset_resilient_errors():
 
 def _client_with_root(mocker, root: FakeNode, **kwargs) -> OpcUaComponentClient:
     mocker.patch("chemunited_workflow.clients.opcua.Client", FakeClient)
-    client = OpcUaComponentClient(endpoint="opc.tcp://localhost:4840", root_node_id="ns=2;s=Root", **kwargs)
+    client = OpcUaComponentClient(
+        endpoint="opc.tcp://localhost:4840", root_node_id="ns=2;s=Root", **kwargs
+    )
     client._root_node()  # force connection
     client._root = root
     return client
@@ -152,7 +158,9 @@ def test_dry_run_never_connects(mocker):
 
 def test_get_reads_variable_value(mocker):
     temp_node = FakeNode(value=21.5)
-    root = FakeNode(node_class=ua.NodeClass.Object, children={"2:Temperature": temp_node})
+    root = FakeNode(
+        node_class=ua.NodeClass.Object, children={"2:Temperature": temp_node}
+    )
     client = _client_with_root(mocker, root)
 
     assert client.get("2:Temperature") == 21.5
@@ -160,7 +168,9 @@ def test_get_reads_variable_value(mocker):
 
 def test_put_writes_variable_value(mocker):
     setpoint_node = FakeNode(node_class=ua.NodeClass.Variable, writable=True)
-    root = FakeNode(node_class=ua.NodeClass.Object, children={"2:SetPoint": setpoint_node})
+    root = FakeNode(
+        node_class=ua.NodeClass.Object, children={"2:SetPoint": setpoint_node}
+    )
     client = _client_with_root(mocker, root)
 
     client.put("2:SetPoint", json=42)
@@ -183,7 +193,9 @@ def test_put_calls_method_with_positional_args(mocker):
 
 def test_error_resilient_wraps_and_swallows(mocker):
     temp_node = FakeNode(error=RuntimeError("bad status code"))
-    root = FakeNode(node_class=ua.NodeClass.Object, children={"2:Temperature": temp_node})
+    root = FakeNode(
+        node_class=ua.NodeClass.Object, children={"2:Temperature": temp_node}
+    )
     client = _client_with_root(mocker, root, error_resilient=True)
 
     assert client.get("2:Temperature") == {}
@@ -194,7 +206,9 @@ def test_error_resilient_wraps_and_swallows(mocker):
 
 def test_error_not_resilient_raises_opcua_device_error(mocker):
     temp_node = FakeNode(error=RuntimeError("bad status code"))
-    root = FakeNode(node_class=ua.NodeClass.Object, children={"2:Temperature": temp_node})
+    root = FakeNode(
+        node_class=ua.NodeClass.Object, children={"2:Temperature": temp_node}
+    )
     client = _client_with_root(mocker, root)
 
     with pytest.raises(OpcUaDeviceError):
@@ -203,12 +217,15 @@ def test_error_not_resilient_raises_opcua_device_error(mocker):
 
 def test_concurrent_access_raises(mocker):
     temp_node = FakeNode(value=1)
-    root = FakeNode(node_class=ua.NodeClass.Object, children={"2:Temperature": temp_node})
+    root = FakeNode(
+        node_class=ua.NodeClass.Object, children={"2:Temperature": temp_node}
+    )
     client = _client_with_root(mocker, root)
     errors: list[Exception] = []
 
     client._access_lock.acquire()
     try:
+
         def attempt():
             try:
                 client.get("2:Temperature")
@@ -227,7 +244,9 @@ def test_concurrent_access_raises(mocker):
 
 def test_close_disconnects_and_is_idempotent(mocker):
     temp_node = FakeNode(value=1)
-    root = FakeNode(node_class=ua.NodeClass.Object, children={"2:Temperature": temp_node})
+    root = FakeNode(
+        node_class=ua.NodeClass.Object, children={"2:Temperature": temp_node}
+    )
     client = _client_with_root(mocker, root)
     fake_client = client._client
 
@@ -240,17 +259,25 @@ def test_close_disconnects_and_is_idempotent(mocker):
 
 
 def test_connection_failure_wrapped_as_opcua_device_error(mocker):
-    mocker.patch("chemunited_workflow.clients.opcua.Client", side_effect=RuntimeError("refused"))
-    client = OpcUaComponentClient(endpoint="opc.tcp://localhost:4840", root_node_id="ns=2;s=Root")
+    mocker.patch(
+        "chemunited_workflow.clients.opcua.Client", side_effect=RuntimeError("refused")
+    )
+    client = OpcUaComponentClient(
+        endpoint="opc.tcp://localhost:4840", root_node_id="ns=2;s=Root"
+    )
 
     with pytest.raises(OpcUaDeviceError):
         client.get("2:Temperature")
 
 
 def test_connection_failure_resilient_swallows_error(mocker):
-    mocker.patch("chemunited_workflow.clients.opcua.Client", side_effect=RuntimeError("refused"))
+    mocker.patch(
+        "chemunited_workflow.clients.opcua.Client", side_effect=RuntimeError("refused")
+    )
     client = OpcUaComponentClient(
-        endpoint="opc.tcp://localhost:4840", root_node_id="ns=2;s=Root", error_resilient=True
+        endpoint="opc.tcp://localhost:4840",
+        root_node_id="ns=2;s=Root",
+        error_resilient=True,
     )
 
     result = client.get("2:Temperature")
@@ -262,8 +289,12 @@ def test_connection_failure_resilient_swallows_error(mocker):
 
 
 def test_discover_commands_connection_failure_wrapped(mocker):
-    mocker.patch("chemunited_workflow.clients.opcua.Client", side_effect=RuntimeError("refused"))
-    client = OpcUaComponentClient(endpoint="opc.tcp://localhost:4840", root_node_id="ns=2;s=Root")
+    mocker.patch(
+        "chemunited_workflow.clients.opcua.Client", side_effect=RuntimeError("refused")
+    )
+    client = OpcUaComponentClient(
+        endpoint="opc.tcp://localhost:4840", root_node_id="ns=2;s=Root"
+    )
 
     with pytest.raises(OpcUaDeviceError):
         client.discover_commands()
@@ -271,7 +302,9 @@ def test_discover_commands_connection_failure_wrapped(mocker):
 
 def test_ping_succeeds_when_connectable(mocker):
     mocker.patch("chemunited_workflow.clients.opcua.Client", FakeClient)
-    client = OpcUaComponentClient(endpoint="opc.tcp://localhost:4840", root_node_id="ns=2;s=Root")
+    client = OpcUaComponentClient(
+        endpoint="opc.tcp://localhost:4840", root_node_id="ns=2;s=Root"
+    )
 
     client.ping()  # must not raise
 
@@ -279,17 +312,25 @@ def test_ping_succeeds_when_connectable(mocker):
 
 
 def test_ping_raises_on_connection_failure(mocker):
-    mocker.patch("chemunited_workflow.clients.opcua.Client", side_effect=RuntimeError("refused"))
-    client = OpcUaComponentClient(endpoint="opc.tcp://localhost:4840", root_node_id="ns=2;s=Root")
+    mocker.patch(
+        "chemunited_workflow.clients.opcua.Client", side_effect=RuntimeError("refused")
+    )
+    client = OpcUaComponentClient(
+        endpoint="opc.tcp://localhost:4840", root_node_id="ns=2;s=Root"
+    )
 
     with pytest.raises(OpcUaDeviceError):
         client.ping()
 
 
 def test_ping_resilient_swallows_connection_failure(mocker):
-    mocker.patch("chemunited_workflow.clients.opcua.Client", side_effect=RuntimeError("refused"))
+    mocker.patch(
+        "chemunited_workflow.clients.opcua.Client", side_effect=RuntimeError("refused")
+    )
     client = OpcUaComponentClient(
-        endpoint="opc.tcp://localhost:4840", root_node_id="ns=2;s=Root", error_resilient=True
+        endpoint="opc.tcp://localhost:4840",
+        root_node_id="ns=2;s=Root",
+        error_resilient=True,
     )
 
     client.ping()  # must not raise
@@ -300,7 +341,9 @@ def test_ping_resilient_swallows_connection_failure(mocker):
 
 
 def test_discover_commands_shape(mocker):
-    input_args_node = FakeNode(value=[SimpleNamespace(Name="speed", DataType=ua.NodeId(6, 0))])
+    input_args_node = FakeNode(
+        value=[SimpleNamespace(Name="speed", DataType=ua.NodeId(6, 0))]
+    )
     method_node = FakeNode(
         node_class=ua.NodeClass.Method,
         browse_name=ua.QualifiedName("Home", 2),
@@ -394,7 +437,9 @@ def test_get_does_not_poll_idle_node(mocker):
 
 def test_idle_wait_disabled_by_default(mocker):
     setpoint_node = FakeNode(node_class=ua.NodeClass.Variable, writable=True)
-    root = FakeNode(node_class=ua.NodeClass.Object, children={"2:SetPoint": setpoint_node})
+    root = FakeNode(
+        node_class=ua.NodeClass.Object, children={"2:SetPoint": setpoint_node}
+    )
     client = _client_with_root(mocker, root)  # no idle_node_path configured
 
     client.put("2:SetPoint", json=42)  # must not try to resolve a nonexistent idle node

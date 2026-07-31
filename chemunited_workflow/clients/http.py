@@ -324,7 +324,9 @@ class ComponentClient(DeviceClientMixin, BaseClient):
                     f"Device did not report idle within {self._feedback_timeout}s"
                 )
                 if self._error_resilient:
-                    logger.error("Client timeout (error_resilient=True): {}", timeout_exc)
+                    logger.error(
+                        "Client timeout (error_resilient=True): {}", timeout_exc
+                    )
                     _push_thread_resilient_error(timeout_exc)
                     return
                 raise timeout_exc

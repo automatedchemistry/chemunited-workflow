@@ -10,7 +10,10 @@ from __future__ import annotations
 
 from importlib import import_module
 
-from .base import DeviceClientMixin, _pop_thread_resilient_errors, _push_thread_resilient_error
+from .base import (
+    DeviceClientMixin,
+    _pop_thread_resilient_errors as _pop_thread_resilient_errors,
+)
 from .envelope import CommandResponse
 from .http import BaseClient, ComponentClient
 

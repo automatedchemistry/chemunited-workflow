@@ -161,13 +161,17 @@ class OpcUaComponentClient(DeviceClientMixin):
             return self._handle_native_error(exc)
         return CommandResponse(native=value, text=str(value), body_fn=lambda: value)
 
-    def _transport_put(self, path: str, *, params: Any | None, json: Any | None) -> CommandResponse:
+    def _transport_put(
+        self, path: str, *, params: Any | None, json: Any | None
+    ) -> CommandResponse:
         if self._dry_run:
             return CommandResponse(native=None, text="{}", body_fn=lambda: {})
         try:
             node = self._resolve(path)
             if node.read_node_class() == ua.NodeClass.Method:
-                args: list[Any] = list(params.values()) if isinstance(params, Mapping) else []
+                args: list[Any] = (
+                    list(params.values()) if isinstance(params, Mapping) else []
+                )
                 if isinstance(json, Mapping):
                     args.extend(json.values())
                 elif json is not None:
@@ -191,11 +195,18 @@ class OpcUaComponentClient(DeviceClientMixin):
     # configured idle value — a get is a passive read and never triggers this.
 
     def _execute_post_command(self, verb: str) -> None:
-        if verb in ("put", "post") and not self._dry_run and self._idle_node_path is not None:
+        if (
+            verb in ("put", "post")
+            and not self._dry_run
+            and self._idle_node_path is not None
+        ):
             self._wait_until_idle()
 
     def _wait_until_idle(self) -> None:
-        assert self._idle_node_path is not None
+        if self._idle_node_path is None:
+            raise OpcUaDeviceError(
+                "_wait_until_idle called without an idle_node_path configured"
+            )
         deadline = (
             None
             if self._feedback_timeout is None
@@ -208,7 +219,9 @@ class OpcUaComponentClient(DeviceClientMixin):
             except Exception as exc:
                 wrapped = OpcUaDeviceError(str(exc))
                 if self._error_resilient:
-                    logger.error("OPC UA client error (error_resilient=True): {}", wrapped)
+                    logger.error(
+                        "OPC UA client error (error_resilient=True): {}", wrapped
+                    )
                     _push_thread_resilient_error(wrapped)
                     return
                 raise wrapped from exc
@@ -225,7 +238,9 @@ class OpcUaComponentClient(DeviceClientMixin):
                     f"{self._idle_value!r} within {self._feedback_timeout}s"
                 )
                 if self._error_resilient:
-                    logger.error("Client timeout (error_resilient=True): {}", timeout_exc)
+                    logger.error(
+                        "Client timeout (error_resilient=True): {}", timeout_exc
+                    )
                     _push_thread_resilient_error(timeout_exc)
                     return
                 raise timeout_exc
@@ -265,7 +280,9 @@ class OpcUaComponentClient(DeviceClientMixin):
                             "value": {
                                 "in": "body",
                                 "required": True,
-                                "type": _VARIANT_TYPE_NAMES.get(variant_type.name, "object"),
+                                "type": _VARIANT_TYPE_NAMES.get(
+                                    variant_type.name, "object"
+                                ),
                             }
                         },
                         "summary": summary,
@@ -299,6 +316,8 @@ class OpcUaComponentClient(DeviceClientMixin):
         for arg in arguments:
             arg_type = "object"
             if arg.DataType.NamespaceIndex == 0:
-                arg_type = _OPCUA_BUILTIN_DATATYPE_IDS.get(arg.DataType.Identifier, "object")
+                arg_type = _OPCUA_BUILTIN_DATATYPE_IDS.get(
+                    arg.DataType.Identifier, "object"
+                )
             parameters[arg.Name] = {"in": "body", "required": True, "type": arg_type}
         return parameters

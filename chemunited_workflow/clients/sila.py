@@ -17,7 +17,9 @@ from typing import Any
 
 from loguru import logger
 from sila2.client import SilaClient
-from sila2.client.client_observable_command_instance import ClientObservableCommandInstance
+from sila2.client.client_observable_command_instance import (
+    ClientObservableCommandInstance,
+)
 
 from ..exceptions import SilaDeviceError
 from .base import DeviceClientMixin, _push_thread_resilient_error
@@ -70,7 +72,10 @@ class SilaComponentClient(DeviceClientMixin):
     def _ensure_connected(self) -> SilaClient:
         if self._client is None:
             self._client = SilaClient(
-                self._host, self._port, insecure=self._insecure, root_certs=self._root_certs
+                self._host,
+                self._port,
+                insecure=self._insecure,
+                root_certs=self._root_certs,
             )
         return self._client
 
@@ -93,7 +98,9 @@ class SilaComponentClient(DeviceClientMixin):
     def _resolve(path: str) -> tuple[str, str]:
         feature_id, _, member_id = path.partition(".")
         if not member_id:
-            raise ValueError(f"SiLA2 command path must be 'Feature.Member', got {path!r}")
+            raise ValueError(
+                f"SiLA2 command path must be 'Feature.Member', got {path!r}"
+            )
         return feature_id, member_id
 
     def _handle_native_error(self, exc: Exception) -> CommandResponse:
@@ -116,7 +123,9 @@ class SilaComponentClient(DeviceClientMixin):
             return self._handle_native_error(exc)
         return CommandResponse(native=value, text=str(value), body_fn=lambda: value)
 
-    def _transport_put(self, path: str, *, params: Any | None, json: Any | None) -> CommandResponse:
+    def _transport_put(
+        self, path: str, *, params: Any | None, json: Any | None
+    ) -> CommandResponse:
         if self._dry_run:
             return CommandResponse(native=None, text="{}", body_fn=lambda: {})
         feature_id, member_id = self._resolve(path)
@@ -138,14 +147,20 @@ class SilaComponentClient(DeviceClientMixin):
 
     _transport_post = _transport_put
 
-    def _await_observable_command(self, instance: ClientObservableCommandInstance) -> Any:
+    def _await_observable_command(
+        self, instance: ClientObservableCommandInstance
+    ) -> Any:
         """Block until an observable command finishes, then return its responses.
 
         Status/progress are pushed by a background subscription thread that
         sila2 starts when the command is invoked, so this only needs to poll
         the local ``.done`` flag — no extra RPCs are made here.
         """
-        deadline = None if self._feedback_timeout is None else time.monotonic() + self._feedback_timeout
+        deadline = (
+            None
+            if self._feedback_timeout is None
+            else time.monotonic() + self._feedback_timeout
+        )
         while not instance.done:
             self._raise_if_cancelled()
             if deadline is not None and time.monotonic() >= deadline:
@@ -180,7 +195,10 @@ class SilaComponentClient(DeviceClientMixin):
                     "parameters": {},
                     "summary": prop._description,
                 }
-            all_commands = {**feature._unobservable_commands, **feature._observable_commands}
+            all_commands = {
+                **feature._unobservable_commands,
+                **feature._observable_commands,
+            }
             for identifier, cmd in all_commands.items():
                 name = f"{feature_id}.{identifier}"
                 commands[f"{name}_put"] = {

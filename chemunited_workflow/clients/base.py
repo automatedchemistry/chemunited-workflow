@@ -10,7 +10,6 @@ from dataclasses import asdict, is_dataclass
 from pathlib import Path
 from typing import Any
 
-from loguru import logger
 
 from ..cancellation import raise_if_cancelled, sleep_interruptibly
 from ..durations import parse_timeout_commands
@@ -159,9 +158,13 @@ class DeviceClientMixin(abc.ABC):
             if verb == "get":
                 resp = self._transport_get(path, params=safe_query_params)
             elif verb == "put":
-                resp = self._transport_put(path, params=safe_query_params, json=safe_json)
+                resp = self._transport_put(
+                    path, params=safe_query_params, json=safe_json
+                )
             else:
-                resp = self._transport_post(path, params=safe_query_params, json=safe_json)
+                resp = self._transport_post(
+                    path, params=safe_query_params, json=safe_json
+                )
             self._raise_if_cancelled()
         finally:
             self._access_lock.release()

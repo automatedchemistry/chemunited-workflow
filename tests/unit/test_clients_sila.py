@@ -5,7 +5,9 @@ from __future__ import annotations
 import threading
 
 import pytest
-from sila2.client.client_observable_command_instance import ClientObservableCommandInstance
+from sila2.client.client_observable_command_instance import (
+    ClientObservableCommandInstance,
+)
 
 from chemunited_workflow.clients.base import _pop_thread_resilient_errors
 from chemunited_workflow.clients.sila import SilaComponentClient
@@ -28,7 +30,9 @@ String = type("String", (), {})
 
 
 class FakeCommand:
-    def __init__(self, identifier, parameters=(), response=None, error=None, description=""):
+    def __init__(
+        self, identifier, parameters=(), response=None, error=None, description=""
+    ):
         self._identifier = identifier
         self.parameters = list(parameters)
         self._response = response
@@ -109,7 +113,9 @@ class FakeProperty:
 
 
 class FakeFeature:
-    def __init__(self, identifier, properties=None, commands=None, observable_commands=None):
+    def __init__(
+        self, identifier, properties=None, commands=None, observable_commands=None
+    ):
         self._identifier = identifier
         self._client_properties = dict(properties or {})
         self._client_commands = {**(commands or {}), **(observable_commands or {})}
@@ -145,7 +151,9 @@ def _reset_resilient_errors():
 def _client_with_feature(mocker, feature: FakeFeature, **kwargs) -> SilaComponentClient:
     mocker.patch("chemunited_workflow.clients.sila.SilaClient", FakeSilaClient)
     client = SilaComponentClient(host="localhost", port=50051, **kwargs)
-    sila_client = client._ensure_connected()  # force connection so we can inject the fake feature
+    sila_client = (
+        client._ensure_connected()
+    )  # force connection so we can inject the fake feature
     sila_client._features[feature._identifier] = feature
     return client
 
@@ -160,14 +168,20 @@ def test_dry_run_never_connects(mocker):
 
 
 def test_get_returns_property_value(mocker):
-    feature = FakeFeature("Thermostat", properties={"Temperature": FakeProperty("Temperature", value=21.5)})
+    feature = FakeFeature(
+        "Thermostat",
+        properties={"Temperature": FakeProperty("Temperature", value=21.5)},
+    )
     client = _client_with_feature(mocker, feature)
 
     assert client.get("Thermostat.Temperature") == 21.5
 
 
 def test_get_raw_response_returns_same_value(mocker):
-    feature = FakeFeature("Thermostat", properties={"Temperature": FakeProperty("Temperature", value=21.5)})
+    feature = FakeFeature(
+        "Thermostat",
+        properties={"Temperature": FakeProperty("Temperature", value=21.5)},
+    )
     client = _client_with_feature(mocker, feature)
 
     assert client.get("Thermostat.Temperature", raw_response=True) == 21.5
@@ -207,12 +221,15 @@ def test_error_not_resilient_raises_sila_device_error(mocker):
 
 
 def test_concurrent_access_raises(mocker):
-    feature = FakeFeature("Thermostat", properties={"Temperature": FakeProperty("Temperature", value=1)})
+    feature = FakeFeature(
+        "Thermostat", properties={"Temperature": FakeProperty("Temperature", value=1)}
+    )
     client = _client_with_feature(mocker, feature)
     errors: list[Exception] = []
 
     client._access_lock.acquire()
     try:
+
         def attempt():
             try:
                 client.get("Thermostat.Temperature")
@@ -231,7 +248,9 @@ def test_concurrent_access_raises(mocker):
 
 def test_write_json_log(mocker, tmp_path):
     log_path = tmp_path / "thermostat.jsonl"
-    feature = FakeFeature("Thermostat", properties={"Temperature": FakeProperty("Temperature", value=1)})
+    feature = FakeFeature(
+        "Thermostat", properties={"Temperature": FakeProperty("Temperature", value=1)}
+    )
     client = _client_with_feature(mocker, feature, pool_json_log=log_path)
 
     client.get("Thermostat.Temperature")
@@ -240,9 +259,15 @@ def test_write_json_log(mocker, tmp_path):
 
 
 def test_put_awaits_observable_command_and_returns_responses(mocker):
-    instance = FakeObservableCommandInstance(response={"FinalFillLevelMicroliters": 100.0}, done_after=3)
-    command = FakeObservableCommand("AspirateVolume", instance_factory=lambda **kw: instance)
-    feature = FakeFeature("FluidDosingService", observable_commands={"AspirateVolume": command})
+    instance = FakeObservableCommandInstance(
+        response={"FinalFillLevelMicroliters": 100.0}, done_after=3
+    )
+    command = FakeObservableCommand(
+        "AspirateVolume", instance_factory=lambda **kw: instance
+    )
+    feature = FakeFeature(
+        "FluidDosingService", observable_commands={"AspirateVolume": command}
+    )
     client = _client_with_feature(mocker, feature)
 
     result = client.put("FluidDosingService.AspirateVolume", VolumeMicroliters=500.0)
@@ -253,8 +278,12 @@ def test_put_awaits_observable_command_and_returns_responses(mocker):
 
 
 def test_put_observable_command_times_out(mocker):
-    command = FakeObservableCommand("AspirateVolume", instance_factory=lambda **kw: FakeNeverDoneCommandInstance())
-    feature = FakeFeature("FluidDosingService", observable_commands={"AspirateVolume": command})
+    command = FakeObservableCommand(
+        "AspirateVolume", instance_factory=lambda **kw: FakeNeverDoneCommandInstance()
+    )
+    feature = FakeFeature(
+        "FluidDosingService", observable_commands={"AspirateVolume": command}
+    )
     client = _client_with_feature(mocker, feature, timeout_commands="0.05 s")
 
     with pytest.raises(SilaDeviceError, match="did not finish"):
@@ -262,7 +291,9 @@ def test_put_observable_command_times_out(mocker):
 
 
 def test_close_disconnects_and_is_idempotent(mocker):
-    feature = FakeFeature("Thermostat", properties={"Temperature": FakeProperty("Temperature", value=1)})
+    feature = FakeFeature(
+        "Thermostat", properties={"Temperature": FakeProperty("Temperature", value=1)}
+    )
     client = _client_with_feature(mocker, feature)
     fake_client = client._client
 
@@ -274,7 +305,10 @@ def test_close_disconnects_and_is_idempotent(mocker):
 
 
 def test_connection_failure_wrapped_as_sila_device_error(mocker):
-    mocker.patch("chemunited_workflow.clients.sila.SilaClient", side_effect=RuntimeError("refused"))
+    mocker.patch(
+        "chemunited_workflow.clients.sila.SilaClient",
+        side_effect=RuntimeError("refused"),
+    )
     client = SilaComponentClient(host="localhost", port=50051)
 
     with pytest.raises(SilaDeviceError):
@@ -282,7 +316,10 @@ def test_connection_failure_wrapped_as_sila_device_error(mocker):
 
 
 def test_connection_failure_resilient_swallows_error(mocker):
-    mocker.patch("chemunited_workflow.clients.sila.SilaClient", side_effect=RuntimeError("refused"))
+    mocker.patch(
+        "chemunited_workflow.clients.sila.SilaClient",
+        side_effect=RuntimeError("refused"),
+    )
     client = SilaComponentClient(host="localhost", port=50051, error_resilient=True)
 
     result = client.get("Thermostat.Temperature")
@@ -294,7 +331,10 @@ def test_connection_failure_resilient_swallows_error(mocker):
 
 
 def test_discover_commands_connection_failure_wrapped(mocker):
-    mocker.patch("chemunited_workflow.clients.sila.SilaClient", side_effect=RuntimeError("refused"))
+    mocker.patch(
+        "chemunited_workflow.clients.sila.SilaClient",
+        side_effect=RuntimeError("refused"),
+    )
     client = SilaComponentClient(host="localhost", port=50051)
 
     with pytest.raises(SilaDeviceError):
@@ -311,7 +351,10 @@ def test_ping_succeeds_when_connectable(mocker):
 
 
 def test_ping_raises_on_connection_failure(mocker):
-    mocker.patch("chemunited_workflow.clients.sila.SilaClient", side_effect=RuntimeError("refused"))
+    mocker.patch(
+        "chemunited_workflow.clients.sila.SilaClient",
+        side_effect=RuntimeError("refused"),
+    )
     client = SilaComponentClient(host="localhost", port=50051)
 
     with pytest.raises(SilaDeviceError):
@@ -319,7 +362,10 @@ def test_ping_raises_on_connection_failure(mocker):
 
 
 def test_ping_resilient_swallows_connection_failure(mocker):
-    mocker.patch("chemunited_workflow.clients.sila.SilaClient", side_effect=RuntimeError("refused"))
+    mocker.patch(
+        "chemunited_workflow.clients.sila.SilaClient",
+        side_effect=RuntimeError("refused"),
+    )
     client = SilaComponentClient(host="localhost", port=50051, error_resilient=True)
 
     client.ping()  # must not raise
