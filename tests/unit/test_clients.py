@@ -22,6 +22,21 @@ from chemunited_quantities import ChemUnitQuantity
 BASE_URL = "http://device-server:8000"
 
 
+def _ok_json_response() -> requests.Response:
+    response = requests.Response()
+    response.status_code = 200
+    response._content = b"{}"
+    response.headers["Content-Type"] = "application/json"
+    return response
+
+
+def _idle_true_response() -> requests.Response:
+    response = requests.Response()
+    response.status_code = 200
+    response._content = b"true"
+    return response
+
+
 # timeout_commands parsing
 
 
@@ -54,6 +69,16 @@ def test_build_url_trailing_slash_stripped():
 def test_build_url_no_double_slash():
     client = BaseClient("http://device-server:8000")
     assert client._build_url("pump/dose") == "http://device-server:8000/pump/dose"
+
+
+# ── close ─────────────────────────────────────────────────────────────────────
+
+
+def test_close_closes_session(mocker):
+    client = BaseClient(BASE_URL)
+    close_spy = mocker.patch.object(client._session, "close")
+    client.close()
+    close_spy.assert_called_once()
 
 
 # ── Hook order ────────────────────────────────────────────────────────────────
@@ -131,6 +156,8 @@ def test_component_client_sequential_calls_succeed():
 )
 def test_component_client_defaults_to_parsed_json(method, verb):
     resp_lib.add(method, f"{BASE_URL}/x", status=200, json={"ready": True})
+    if verb in ("put", "post"):
+        resp_lib.add(resp_lib.GET, f"{BASE_URL}/is-idle", status=200, body=b"true")
     client = ComponentClient(BASE_URL)
     result = getattr(client, verb)("/x")
     assert result == {"ready": True}
@@ -143,24 +170,18 @@ def test_component_client_defaults_to_parsed_json(method, verb):
 )
 def test_component_client_raw_response_returns_response_object(method, verb):
     resp_lib.add(method, f"{BASE_URL}/x", status=200, json={"ready": True})
+    if verb in ("put", "post"):
+        resp_lib.add(resp_lib.GET, f"{BASE_URL}/is-idle", status=200, body=b"true")
     client = ComponentClient(BASE_URL)
     result = getattr(client, verb)("/x", raw_response=True)
     assert isinstance(result, requests.Response)
     assert result.status_code == 200
 
 
-def test_poll_feedback_raises_after_custom_timeout(mocker):
-    response = requests.Response()
-    response.status_code = 200
-    response._content = b"false"
-    mocker.patch.object(BaseClient, "get", return_value=response)
-
-    client = ComponentClient(BASE_URL)
-    with pytest.raises(TimeoutError, match="0.01"):
-        client._poll_feedback("is-ready", "true", interval=0, timeout=0.01)
+# ── automatic wait-for-idle (GET /is-idle) ───────────────────────────────────
 
 
-def test_poll_feedback_without_timeout_runs_until_expected(mocker):
+def test_put_waits_for_is_idle_before_returning(mocker):
     answers = iter(["false", "false", "true"])
     calls = []
 
@@ -172,34 +193,80 @@ def test_poll_feedback_without_timeout_runs_until_expected(mocker):
         return response
 
     mocker.patch.object(BaseClient, "get", new=fake_get)
+    mocker.patch.object(BaseClient, "put", return_value=_ok_json_response())
 
     client = ComponentClient(BASE_URL, timeout_commands="")
-    client._poll_feedback("is-ready", "true", interval=0, timeout=None)
+    client.put("/dose", volume=5)
 
-    assert calls == ["is-ready", "is-ready", "is-ready"]
-
-
-def test_wait_time_stops_when_cancelled():
-    cancel_event = threading.Event()
-    client = ComponentClient(BASE_URL, dry_run=True, cancellation_token=cancel_event)
-
-    timer = threading.Timer(0.05, cancel_event.set)
-    started = time.monotonic()
-    timer.start()
-    try:
-        with pytest.raises(RunCancelledError):
-            client.get("/x", wait_time=5.0)
-    finally:
-        timer.cancel()
-
-    assert time.monotonic() - started < 1.0
+    assert calls == ["is-idle", "is-idle", "is-idle"]
 
 
-def test_indefinite_feedback_polling_stops_when_cancelled(mocker):
+def test_get_does_not_poll_is_idle(mocker):
+    calls = []
+
+    def fake_get(self, path, **kwargs):
+        calls.append(path)
+        response = requests.Response()
+        response.status_code = 200
+        response._content = b"{}"
+        response.headers["Content-Type"] = "application/json"
+        return response
+
+    mocker.patch.object(BaseClient, "get", new=fake_get)
+
+    client = ComponentClient(BASE_URL)
+    client.get("/position")
+
+    assert calls == ["/position"]
+
+
+def test_missing_is_idle_endpoint_warns_once_and_does_not_block(mocker):
+    idle_response = requests.Response()
+    idle_response.status_code = 404
+    idle_response._content = b"Not Found"
+    mocker.patch.object(BaseClient, "get", return_value=idle_response)
+    mocker.patch.object(BaseClient, "put", return_value=_ok_json_response())
+    warning_spy = mocker.patch("chemunited_workflow.clients.http.logger.warning")
+
+    client = ComponentClient(BASE_URL)
+    client.put("/dose", volume=5)
+    client.put("/dose", volume=5)
+
+    assert warning_spy.call_count == 1
+    assert client._is_idle_supported is False
+
+
+def test_is_idle_timeout_raises(mocker):
+    idle_response = requests.Response()
+    idle_response.status_code = 200
+    idle_response._content = b"false"
+    mocker.patch.object(BaseClient, "get", return_value=idle_response)
+    mocker.patch.object(BaseClient, "put", return_value=_ok_json_response())
+    mocker.patch.object(ComponentClient, "_sleep_interruptibly")
+
+    client = ComponentClient(BASE_URL, timeout_commands="0.01 s")
+    with pytest.raises(TimeoutError, match="0.01"):
+        client.put("/dose")
+
+
+def test_is_idle_timeout_pushed_when_error_resilient(mocker):
+    idle_response = requests.Response()
+    idle_response.status_code = 200
+    idle_response._content = b"false"
+    mocker.patch.object(BaseClient, "get", return_value=idle_response)
+    mocker.patch.object(BaseClient, "put", return_value=_ok_json_response())
+    mocker.patch.object(ComponentClient, "_sleep_interruptibly")
+
+    client = ComponentClient(BASE_URL, timeout_commands="0.01 s", error_resilient=True)
+    client.put("/dose")  # does not raise
+
+
+def test_is_idle_polling_stops_when_cancelled(mocker):
     response = requests.Response()
     response.status_code = 200
     response._content = b"false"
     mocker.patch.object(BaseClient, "get", return_value=response)
+    mocker.patch.object(BaseClient, "put", return_value=_ok_json_response())
 
     cancel_event = threading.Event()
     client = ComponentClient(
@@ -213,11 +280,63 @@ def test_indefinite_feedback_polling_stops_when_cancelled(mocker):
     timer.start()
     try:
         with pytest.raises(RunCancelledError):
-            client._poll_feedback("is-ready", "true", interval=5.0, timeout=None)
+            client.put("/dose")
     finally:
         timer.cancel()
 
     assert time.monotonic() - started < 1.0
+
+
+def test_dry_run_put_does_not_poll_is_idle(mocker):
+    get_spy = mocker.patch.object(BaseClient, "get")
+
+    client = ComponentClient(BASE_URL, dry_run=True)
+    client.put("/dose", volume=5)
+
+    get_spy.assert_not_called()
+
+
+# ── stale execution-option kwargs from older process files ──────────────────
+
+
+def test_stale_wait_kwargs_do_not_crash_and_become_query_params(mocker):
+    """Old process files may still pass wait_time/wait_feedback_status/etc.
+
+    These are no longer recognized keyword arguments — they fall through to
+    ``**command_params`` and are sent as harmless, unused query parameters
+    instead of raising a TypeError.
+    """
+    captured: dict[str, object] = {}
+
+    def fake_put(self, path, *, params=None, json=None, **kwargs):
+        captured["params"] = params
+        response = requests.Response()
+        response.status_code = 200
+        response._content = b"{}"
+        response.headers["Content-Type"] = "application/json"
+        return response
+
+    def fake_get(self, path, **kwargs):
+        response = requests.Response()
+        response.status_code = 200
+        response._content = b"true"
+        return response
+
+    mocker.patch.object(BaseClient, "put", new=fake_put)
+    mocker.patch.object(BaseClient, "get", new=fake_get)
+
+    client = ComponentClient(BASE_URL)
+    client.put(
+        "/dose",
+        volume=5,
+        wait_time=2,
+        wait_feedback_status=True,
+        feedback_status_command="is-pumping",
+        feedback_answer="false",
+    )
+
+    assert captured["params"]["wait_time"] == 2
+    assert captured["params"]["feedback_status_command"] == "is-pumping"
 
 
 # ── ComponentClient: concurrency guard ───────────────────────────────────────
@@ -434,6 +553,7 @@ def test_component_client_put_passes_safe_params_to_base_client(mocker):
         return response
 
     mocker.patch.object(BaseClient, "put", new=fake_put)
+    mocker.patch.object(BaseClient, "get", return_value=_idle_true_response())
     client = ComponentClient(BASE_URL)
 
     client.put(

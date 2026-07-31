@@ -42,12 +42,12 @@ class RunRequest(BaseModel):
     )
     timeout_commands: str = Field(
         default="",
-        title="Timeout duration to wait the command feedback",
+        title="Timeout duration to wait for device idle",
         description=(
-            "Timeout duration to wait the command feedback after wait_time finished.\n"
-            "If timeout_commands is set to an empty string, the protocol will wait\n"
-            "indefinitely for the feedback from the device. Accepted format:\n"
-            "<value> <unit>, where unit can be 's' (seconds)."
+            "Timeout duration to wait for a flowchem device to report idle after\n"
+            "a command runs. If timeout_commands is set to an empty string, the\n"
+            "protocol will wait indefinitely. Accepted format: <value> <unit>,\n"
+            "where unit can be 's' (seconds)."
         ),
     )
     error_resilient: bool = Field(

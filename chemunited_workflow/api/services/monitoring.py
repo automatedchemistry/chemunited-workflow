@@ -1,11 +1,13 @@
 """MonitoringService — standalone sensor-monitoring sessions.
 
-Polling deliberately bypasses ``Platform``/``ComponentClient``: those enforce
-a non-blocking per-device exclusive lock meant to serialize protocol
-execution and log to ``log/pool/*.jsonl``, which the runner drains/deletes.
-Monitoring instead issues independent ``requests`` calls resolved from
-``connectivity/associations.json``, the same way ``ProtocolService._ping_url``
-already does — proven to coexist safely with an active protocol run.
+Polling uses a throwaway ``Platform`` (a fresh read of
+``connectivity/associations.json``, unlocked, no ``pool_json_log``) rather
+than reusing whatever ``Platform`` a live protocol run holds in memory — so
+monitoring never contends with an in-progress run's per-device lock or
+pollutes its pool log. Note: none of the three client protocols currently
+has a timeout passthrough (see ``ProtocolService.send_component_command``'s
+docstring for the same caveat) — a hung device can stall a poll tick longer
+than ``request_timeout`` would suggest.
 """
 
 from __future__ import annotations
@@ -17,9 +19,14 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 import requests
+from loguru import logger
 
+from ...clients.base import _pop_thread_resilient_errors
+from ...clients.http import ComponentClient
+from ...platform import Platform
 from ..monitoring_store import MonitoringStore
 
 _DEFAULT_CONFIG: dict[str, Any] = {
@@ -27,6 +34,16 @@ _DEFAULT_CONFIG: dict[str, Any] = {
     "request_timeout": 5.0,
     "variables": [],
 }
+
+
+def _safe_close(client: Any, component_name: str) -> None:
+    """Best-effort cleanup for a throwaway client — never masks a poll result."""
+    try:
+        client.close()
+    except Exception as exc:
+        logger.warning(
+            "Failed to close throwaway client for '{}': {}", component_name, exc
+        )
 
 
 class MonitoringService:
@@ -37,34 +54,64 @@ class MonitoringService:
     # ── Discovery ────────────────────────────────────────────────────────────
 
     def discover(self, component: str, timeout: float = 5.0) -> list[dict[str, Any]]:
-        """List GET commands a component exposes, via the device server's live OpenAPI schema.
+        """List readable commands a component exposes.
 
-        This depends on the external flowchem server actually serving
-        ``{server_url}/openapi.json`` — unverified from this repo, since
-        flowchem itself is not vendored here.
+        Flowchem: via the device server's live OpenAPI schema (depends on the
+        external flowchem server actually serving ``{root}/openapi.json``
+        — unverified from this repo, since flowchem itself is not vendored
+        here). SiLA2/OPC UA: via the client's own ``discover_commands()``,
+        filtered to read-only (``get``) entries — parameter shape differs by
+        protocol (raw OpenAPI parameter objects for flowchem; ``{name, in,
+        required, type}`` dicts for sila2/opcua).
         """
         connectivity = self._read_associations()
-        server_url = connectivity["server_url"].rstrip("/")
-        component_url = self._component_url(connectivity, component)
-        response = requests.get(f"{server_url}/openapi.json", timeout=timeout)
-        response.raise_for_status()
-        schema = response.json()
-        prefix = f"/{component_url}/"
-        results = []
-        for path, methods in schema.get("paths", {}).items():
-            if not path.startswith(prefix) or not isinstance(methods, dict):
-                continue
-            get_op = methods.get("get")
-            if get_op is None:
-                continue
-            results.append(
+        platform = Platform.from_project_dir(self._project_dir)
+        client = None
+        try:
+            if component not in platform:
+                self._component_url(
+                    connectivity, component
+                )  # raises KeyError either way
+            client = platform[component]
+
+            if isinstance(client, ComponentClient):
+                parts = urlsplit(client.base_url)
+                root = f"{parts.scheme}://{parts.netloc}"
+                prefix = parts.path.rstrip("/") + "/"
+                response = requests.get(f"{root}/openapi.json", timeout=timeout)
+                response.raise_for_status()
+                schema = response.json()
+                results = []
+                for path, methods in schema.get("paths", {}).items():
+                    if not path.startswith(prefix) or not isinstance(methods, dict):
+                        continue
+                    get_op = methods.get("get")
+                    if get_op is None:
+                        continue
+                    results.append(
+                        {
+                            "command": path[len(prefix) :],
+                            "summary": get_op.get("summary", ""),
+                            "parameters": get_op.get("parameters", []),
+                        }
+                    )
+                return results
+
+            return [
                 {
-                    "command": path[len(prefix) :],
-                    "summary": get_op.get("summary", ""),
-                    "parameters": get_op.get("parameters", []),
+                    "command": meta["name"],
+                    "summary": meta.get("summary", ""),
+                    "parameters": [
+                        {"name": pname, **pdesc}
+                        for pname, pdesc in meta.get("parameters", {}).items()
+                    ],
                 }
-            )
-        return results
+                for meta in client.discover_commands(timeout=timeout).values()
+                if meta["type"] == "get"
+            ]
+        finally:
+            if client is not None:
+                _safe_close(client, component)
 
     # ── Config (persisted to connectivity/monitoring.json) ─────────────────────
 
@@ -150,69 +197,99 @@ class MonitoringService:
         config: dict[str, Any],
         stop_event: threading.Event,
     ) -> None:
-        connectivity = self._read_associations()
-        server_url = connectivity["server_url"].rstrip("/")
         sample_time = float(config["sample_time"])
-        request_timeout = float(config.get("request_timeout", 5.0))
         variables: list[dict[str, Any]] = config["variables"]
         session_dir = self._session_dir(session_id)
         session_dir.mkdir(parents=True, exist_ok=True)
 
+        # One throwaway Platform for the whole session (not per tick) — reconnecting
+        # a gRPC/OPC UA session every `sample_time` seconds would be wasteful. Variables
+        # are grouped by component so each component's one shared client is only ever
+        # touched by one pool worker at a time: sharing it across per-variable workers
+        # in the same tick would trip ComponentClient's non-blocking per-device lock
+        # (ConcurrentClientAccessError) the same way two protocol-run nodes hitting one
+        # device would.
+        platform = Platform.from_project_dir(self._project_dir, error_resilient=True)
+        groups: dict[str, list[dict[str, Any]]] = {}
+        for var in variables:
+            groups.setdefault(var["component"], []).append(var)
+
         tick = 0
         try:
             with ThreadPoolExecutor(
-                max_workers=max(1, len(variables)), thread_name_prefix="monitoring"
+                max_workers=max(1, len(groups)), thread_name_prefix="monitoring"
             ) as pool:
                 while not stop_event.is_set():
                     tick_start = time.monotonic()
                     futures = {
-                        pool.submit(
-                            self._fetch_one,
-                            server_url,
-                            connectivity,
-                            var["component"],
-                            var["command"],
-                            var.get("kwargs", {}),
-                            request_timeout,
-                        ): var
-                        for var in variables
+                        pool.submit(self._fetch_group, platform, component, group_vars)
+                        for component, group_vars in groups.items()
                     }
-                    for future, var in futures.items():
-                        reading = future.result()
-                        reading["tick"] = tick
-                        self._write_reading(
-                            session_dir, var["component"], var["command"], reading
-                        )
-                        key = f"{var['component']}::{var['command']}"
-                        self._store.update_latest(session_id, key, reading)
+                    for future in futures:
+                        for var, reading in future.result():
+                            reading["tick"] = tick
+                            self._write_reading(
+                                session_dir, var["component"], var["command"], reading
+                            )
+                            key = f"{var['component']}::{var['command']}"
+                            self._store.update_latest(session_id, key, reading)
                     tick += 1
                     remaining = sample_time - (time.monotonic() - tick_start)
                     if remaining > 0:
                         stop_event.wait(timeout=remaining)
         finally:
+            for component, client in platform.items():
+                _safe_close(client, component)
             self._store.set_stopped(session_id)
+
+    def _fetch_group(
+        self,
+        platform: Platform,
+        component: str,
+        group_vars: list[dict[str, Any]],
+    ) -> list[tuple[dict[str, Any], dict[str, Any]]]:
+        """Fetch every variable for one component sequentially, through its one
+        shared client — see _poll_loop's docstring for why this can't be per-variable.
+        """
+        return [
+            (
+                var,
+                self._fetch_one(
+                    platform, component, var["command"], var.get("kwargs", {})
+                ),
+            )
+            for var in group_vars
+        ]
 
     def _fetch_one(
         self,
-        server_url: str,
-        connectivity: dict[str, Any],
+        platform: Platform,
         component: str,
         command: str,
         kwargs: dict[str, Any],
-        timeout: float,
     ) -> dict[str, Any]:
         now = datetime.now().isoformat()
+        if component not in platform:
+            return {
+                "time": now,
+                "value": None,
+                "error": f"Component '{component}' has no configured connection for its protocol.",
+            }
+        client = platform[component]
+        is_http = isinstance(client, ComponentClient)
+        _pop_thread_resilient_errors()  # discard stale entries from thread-pool reuse
         try:
-            component_url = self._component_url(connectivity, component)
-        except KeyError as exc:
+            raw = client.get(command, params=kwargs or None, raw_response=is_http)
+        except Exception as exc:
             return {"time": now, "value": None, "error": str(exc)}
-        url = f"{server_url}/{component_url}/{command.lstrip('/')}"
-        try:
-            response = requests.get(url, params=kwargs, timeout=timeout)
-            response.raise_for_status()
-            return {"time": now, "value": self._parse_value(response), "error": None}
-        except requests.exceptions.RequestException as exc:
-            return {"time": now, "value": None, "error": str(exc)}
+        if is_http:
+            value = self._parse_value(raw)
+        else:
+            value = raw
+        errors = _pop_thread_resilient_errors()
+        if errors:
+            return {"time": now, "value": None, "error": str(errors[-1])}
+        return {"time": now, "value": value, "error": None}
 
     @staticmethod
     def _parse_value(response: requests.Response) -> Any:

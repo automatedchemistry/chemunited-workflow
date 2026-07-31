@@ -4,19 +4,33 @@ from __future__ import annotations
 
 import json
 import re
+import time
 import warnings
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 import requests as _requests
+from loguru import logger
 from pydantic import AliasChoices, BaseModel, TypeAdapter
 from pydantic.fields import FieldInfo
 from pydantic.json_schema import PydanticJsonSchemaWarning
 from pydantic_core import PydanticUndefined
 
 from chemunited_workflow import Process
+from chemunited_workflow.clients.base import _pop_thread_resilient_errors
+from chemunited_workflow.clients.http import ComponentClient
 from chemunited_workflow.platform import Platform
+
+
+def _safe_close(client: Any, component_name: str) -> None:
+    """Best-effort cleanup for a throwaway client — never masks the caller's result."""
+    try:
+        client.close()
+    except Exception as exc:
+        logger.warning(
+            "Failed to close throwaway client for '{}': {}", component_name, exc
+        )
 
 
 class ProtocolService:
@@ -290,27 +304,68 @@ class ProtocolService:
             entry["error"] = str(exc)
         return entry
 
+    def _ping_client(self, component: str, client: Any) -> dict[str, Any]:
+        """Generic reachability probe for non-HTTP protocols: force a real
+        connection via client.ping(), timed locally. reachability/
+        reachability_supported have no equivalent outside flowchem's
+        /is-reachable convention and stay None.
+        """
+        entry: dict[str, Any] = {
+            "component": component,
+            "url": client.base_url,
+            "online": False,
+            "status_code": None,
+            "latency_ms": None,
+            "error": None,
+            "reachability": None,
+            "reachability_supported": None,
+        }
+        _pop_thread_resilient_errors()  # discard stale entries from thread-pool reuse
+        start = time.monotonic()
+        try:
+            client.ping()
+        except Exception as exc:
+            entry["latency_ms"] = round((time.monotonic() - start) * 1000)
+            entry["error"] = str(exc)
+            return entry
+        entry["latency_ms"] = round((time.monotonic() - start) * 1000)
+        errors = _pop_thread_resilient_errors()
+        if errors:
+            entry["error"] = str(errors[-1])
+        else:
+            entry["online"] = True
+        return entry
+
     def ping_components(self, timeout: float = 2.0) -> list[dict[str, Any]]:
         connectivity = self.read_components()
-        server_url = connectivity["server_url"].rstrip("/")
-        results = []
-        for assoc in connectivity["associations"]:
-            component_url = assoc.get("component_url", "").strip()
-            if not component_url:
-                continue
-            full_url = f"{server_url}/{component_url}"
-            results.append(self._ping_url(assoc["component"], full_url, timeout))
-        return results
+        platform = Platform.from_project_dir(self._project_dir, error_resilient=True)
+        try:
+            results = []
+            for assoc in connectivity["associations"]:
+                name = assoc["component"]
+                if name not in platform:
+                    continue  # unconfigured — omitted, same as today
+                client = platform[name]
+                if isinstance(client, ComponentClient):
+                    results.append(self._ping_url(name, client.base_url, timeout))
+                else:
+                    results.append(self._ping_client(name, client))
+            return results
+        finally:
+            for name, client in platform.items():
+                _safe_close(client, name)
 
     def ping_component(
         self, component_name: str, timeout: float = 2.0
     ) -> dict[str, Any]:
         connectivity = self.read_components()
-        server_url = connectivity["server_url"].rstrip("/")
-        for assoc in connectivity["associations"]:
-            if assoc["component"] == component_name:
-                component_url = assoc.get("component_url", "").strip()
-                if not component_url:
+        platform = Platform.from_project_dir(self._project_dir, error_resilient=True)
+        try:
+            if component_name not in platform:
+                if any(
+                    a["component"] == component_name
+                    for a in connectivity["associations"]
+                ):
                     return {
                         "component": component_name,
                         "url": "",
@@ -318,17 +373,29 @@ class ProtocolService:
                         "status_code": None,
                         "latency_ms": None,
                         "error": "not configured",
+                        "reachability": None,
+                        "reachability_supported": None,
                     }
-                full_url = f"{server_url}/{component_url}"
-                return self._ping_url(component_name, full_url, timeout)
-        raise KeyError(f"Component '{component_name}' not found in associations.")
+                raise KeyError(
+                    f"Component '{component_name}' not found in associations."
+                )
+            client = platform[component_name]
+            if isinstance(client, ComponentClient):
+                return self._ping_url(component_name, client.base_url, timeout)
+            return self._ping_client(component_name, client)
+        finally:
+            for name, client in platform.items():
+                _safe_close(client, name)
 
     def get_component_commands(
         self, component_name: str, timeout: float = 5.0
     ) -> dict[str, dict[str, Any]]:
         platform = Platform.from_project_dir(self._project_dir)
         client = platform[component_name]
-        return client.discover_commands(timeout=timeout)
+        try:
+            return client.discover_commands(timeout=timeout)
+        finally:
+            _safe_close(client, component_name)
 
     def send_component_command(
         self,
@@ -339,60 +406,95 @@ class ProtocolService:
         json_body: Any | None = None,
         timeout: float = 5.0,
     ) -> dict[str, Any]:
-        """Issue an ad-hoc command directly against a component's device server.
+        """Issue an ad-hoc command directly against a component, any protocol.
 
-        Deliberately bypasses ``Platform``/``ComponentClient`` — those enforce
-        a non-blocking per-device lock meant to serialize protocol execution
-        and log to ``log/pool/*.jsonl``, which the runner drains/deletes.
-        Same rationale as ``MonitoringService`` (see its module docstring):
-        an ad-hoc UI-triggered command must not contend with an in-progress
-        protocol run's lock or pollute its pool log.
+        Builds a throwaway, unlocked client (a fresh ``Platform`` read from
+        disk) rather than reusing whatever ``Platform`` a live protocol run
+        holds in memory — so an ad-hoc UI command never contends with an
+        in-progress run's per-device lock or pollutes its pool log.
+
+        Note: ``timeout`` is accepted for API-contract compatibility but is
+        not currently enforced against the underlying transport — none of
+        the three client protocols has a timeout passthrough yet, so a call
+        against an unresponsive device can block indefinitely. Known
+        limitation, not fixed here.
         """
-        connectivity = self.read_components()
-        server_url = connectivity["server_url"].rstrip("/")
-        component_url = None
-        for assoc in connectivity["associations"]:
-            if assoc["component"] == component_name:
-                component_url = assoc.get("component_url", "").strip()
-                break
-        else:
-            raise KeyError(f"Component '{component_name}' not found in associations.")
-        if not component_url:
-            raise ValueError(f"Component '{component_name}' has no configured URL.")
-
-        url = f"{server_url}/{component_url}/{command.lstrip('/')}"
-        entry: dict[str, Any] = {
-            "component": component_name,
-            "command": command,
-            "url": url,
-            "ok": False,
-            "status_code": None,
-            "latency_ms": None,
-            "response": None,
-            "error": None,
-        }
-        method = _requests.put if verb == "put" else _requests.get
-        kwargs: dict[str, Any] = {"timeout": timeout, "params": params or None}
-        if verb == "put":
-            kwargs["json"] = json_body
+        platform = Platform.from_project_dir(self._project_dir, error_resilient=True)
+        client: Any = None
         try:
-            response = method(url, **kwargs)
-            entry["status_code"] = response.status_code
-            entry["latency_ms"] = round(response.elapsed.total_seconds() * 1000)
-            entry["ok"] = response.ok
+            if component_name not in platform:
+                connectivity = self.read_components()
+                if any(
+                    a["component"] == component_name
+                    for a in connectivity["associations"]
+                ):
+                    raise ValueError(
+                        f"Component '{component_name}' has no configured connection "
+                        "for its protocol."
+                    )
+                raise KeyError(
+                    f"Component '{component_name}' not found in associations."
+                )
+
+            client = platform[component_name]
+            is_http = isinstance(client, ComponentClient)
+            entry: dict[str, Any] = {
+                "component": component_name,
+                "command": command,
+                "url": f"{client.base_url}/{command.lstrip('/')}",
+                "ok": False,
+                "status_code": None,
+                "latency_ms": None,
+                "response": None,
+                "error": None,
+            }
+            kwargs: dict[str, Any] = {"params": params or None}
+            if verb == "put":
+                kwargs["json"] = json_body
+            if is_http:
+                kwargs["raw_response"] = True
+
+            # Discard anything stale left by an earlier, unrelated call that ran on
+            # this same (thread-pool-reused) thread — same convention as executor.py.
+            _pop_thread_resilient_errors()
+
+            start = time.monotonic()
             try:
-                entry["response"] = response.json()
-            except ValueError:
-                entry["response"] = response.text
-            if not response.ok:
-                entry["error"] = f"HTTP {response.status_code}"
-        except _requests.exceptions.ConnectionError as exc:
-            entry["error"] = f"ConnectionError: {exc}"
-        except _requests.exceptions.Timeout:
-            entry["error"] = f"Timeout after {timeout}s"
-        except _requests.exceptions.RequestException as exc:
-            entry["error"] = str(exc)
-        return entry
+                raw = getattr(client, verb)(command, **kwargs)
+            except _requests.exceptions.RequestException as exc:
+                entry["latency_ms"] = round((time.monotonic() - start) * 1000)
+                entry["error"] = f"{type(exc).__name__}: {exc}"
+                return entry
+            except Exception as exc:  # safety net for any unwrapped client-layer error
+                entry["latency_ms"] = round((time.monotonic() - start) * 1000)
+                entry["error"] = str(exc)
+                return entry
+            entry["latency_ms"] = round((time.monotonic() - start) * 1000)
+            # Always drain the queue this call may have populated, even on the HTTP
+            # path (which reports its own error via status_code below) — ComponentClient
+            # pushes onto this same queue under error_resilient=True, so it must be
+            # drained regardless of protocol to avoid leaking into the next call.
+            errors = _pop_thread_resilient_errors()
+
+            if is_http:
+                entry["status_code"] = raw.status_code
+                entry["ok"] = raw.ok
+                try:
+                    entry["response"] = raw.json()
+                except ValueError:
+                    entry["response"] = raw.text
+                if not raw.ok:
+                    entry["error"] = f"HTTP {raw.status_code}"
+            else:
+                if errors:
+                    entry["error"] = str(errors[-1])
+                else:
+                    entry["ok"] = True
+                    entry["response"] = raw
+            return entry
+        finally:
+            if client is not None:
+                _safe_close(client, component_name)
 
     def read_log(self, filename: str, tail: int | None = None) -> str:
         log_dir = self._log_dir.resolve()

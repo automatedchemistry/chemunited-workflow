@@ -185,7 +185,6 @@ class CustomProcess(Process[ProcessConfig]):
             "position",
             connect="[[1, 2]]",
             disconnect="",
-            wait_time=30,
         )
         logger.info("Process clean: Command 1 finished.")
         return True

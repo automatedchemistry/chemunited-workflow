@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "chemunited-workflow"
-version = "0.0.3"
+version = "0.0.4"
 description = "Conditional NetworkX-based workflow execution with loopbacks and parallel branches."
 requires-python = ">=3.11"
 license = { file = "LICENSE" }
@@ -34,6 +34,8 @@ test = [
     "httpx>=0.27",
 ]
 discovery = ["zeroconf>=0.131"]
+sila2 = ["sila2>=0.14,<1"]
+opcua = ["asyncua>=2.0,<3"]
 
 [project.scripts]
 chemunited-workflow = "chemunited_workflow.cli:main"
@@ -52,5 +54,6 @@ packages = [
     "chemunited_workflow.api",
     "chemunited_workflow.api.routers",
     "chemunited_workflow.api.services",
+    "chemunited_workflow.clients",
     "chemunited_workflow.mcp",
 ]

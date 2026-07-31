@@ -5,6 +5,7 @@ import asyncio
 import requests
 from fastapi import APIRouter, Depends, HTTPException
 
+from ...exceptions import DeviceCommunicationError
 from ..dependencies import get_protocol_service
 from ..schemas import ComponentCommandIn, ComponentCommandResult, ComponentStatus
 from ..services.protocol import ProtocolService
@@ -45,10 +46,10 @@ async def get_component_commands(
         return await asyncio.to_thread(svc.get_component_commands, component, timeout)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
-    except requests.exceptions.RequestException as exc:
+    except (requests.exceptions.RequestException, DeviceCommunicationError) as exc:
         raise HTTPException(
             status_code=502,
-            detail=f"Device server unreachable or has no OpenAPI schema: {exc}",
+            detail=f"Device unreachable or discovery failed: {exc}",
         ) from exc
 
 

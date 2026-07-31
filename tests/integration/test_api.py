@@ -45,7 +45,7 @@ class SlowProcess(Process):
 
     def start(self, ctx: NodeExecutionContext) -> bool:
         Path(self.config.marker_path).write_text("waiting", encoding="utf-8")
-        self.platform["pump"].get("/x", wait_time=5.0)
+        self.platform._wait(5.0)
         return True
 """
 
@@ -751,15 +751,43 @@ def test_get_component_commands_missing(client):
     assert r.status_code == 404
 
 
-def test_send_component_command(client, mocker):
-    resp = mocker.MagicMock()
-    resp.status_code = 200
-    resp.ok = True
-    resp.elapsed.total_seconds.return_value = 0.05
-    resp.json.return_value = {"rate": "5 ml/min"}
+def test_get_component_commands_sila2_unreachable_502(client, project, mocker):
+    associations_path = project["dirs"]["connectivity_dir"] / "associations.json"
+    data = json.loads(associations_path.read_text(encoding="utf-8"))
+    data["associations"].append(
+        {
+            "component": "sila-pump",
+            "protocol": "sila2",
+            "sila_host": "localhost",
+            "sila_port": 50997,
+            "sila_insecure": True,
+        }
+    )
+    associations_path.write_text(json.dumps(data), encoding="utf-8")
     mocker.patch(
-        "chemunited_workflow.api.services.protocol._requests.put",
-        return_value=resp,
+        "chemunited_workflow.clients.sila.SilaClient",
+        side_effect=ConnectionError("refused"),
+    )
+
+    r = client.get("/components/commands/sila-pump")
+
+    assert r.status_code == 502
+    assert "discovery failed" in r.json()["detail"]
+
+
+@resp_lib.activate
+def test_send_component_command(client):
+    resp_lib.add(
+        resp_lib.PUT,
+        "http://device-server:8000/sim-ml600/pump/infuse",
+        json={"rate": "5 ml/min"},
+        status=200,
+    )
+    resp_lib.add(
+        resp_lib.GET,
+        "http://device-server:8000/sim-ml600/pump/is-idle",
+        body=b"true",
+        status=200,
     )
 
     r = client.post(

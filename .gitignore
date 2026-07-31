@@ -226,3 +226,4 @@ pytest-tmp-*
 .old_html
 CLAUDE.md
 projects/
+._tmp/

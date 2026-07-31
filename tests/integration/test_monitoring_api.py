@@ -9,6 +9,7 @@ from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
+import responses as resp_lib
 from fastapi.testclient import TestClient
 
 from chemunited_workflow.api import create_api
@@ -111,6 +112,32 @@ def test_discover_unreachable_server_502(client, mocker):
     assert r.status_code == 502
 
 
+def test_discover_sila2_unreachable_502(client, project, mocker):
+    import json as _json
+
+    associations_path = project["dirs"]["connectivity_dir"] / "associations.json"
+    data = _json.loads(associations_path.read_text(encoding="utf-8"))
+    data["associations"].append(
+        {
+            "component": "sila-pump",
+            "protocol": "sila2",
+            "sila_host": "localhost",
+            "sila_port": 50996,
+            "sila_insecure": True,
+        }
+    )
+    associations_path.write_text(_json.dumps(data), encoding="utf-8")
+    mocker.patch(
+        "chemunited_workflow.clients.sila.SilaClient",
+        side_effect=ConnectionError("refused"),
+    )
+
+    r = client.get("/monitoring/discover/sila-pump")
+
+    assert r.status_code == 502
+    assert "discovery failed" in r.json()["detail"]
+
+
 # ── /monitoring/config ───────────────────────────────────────────────────────
 
 
@@ -140,13 +167,13 @@ def test_start_session_without_config_422(client):
     assert r.status_code == 422
 
 
-def test_full_session_lifecycle(client, mocker):
-    mock_resp = MagicMock()
-    mock_resp.raise_for_status.return_value = None
-    mock_resp.json.return_value = 99.0
-    mocker.patch(
-        "chemunited_workflow.api.services.monitoring.requests.get",
-        return_value=mock_resp,
+@resp_lib.activate
+def test_full_session_lifecycle(client):
+    resp_lib.add(
+        resp_lib.GET,
+        "http://device-server:8000/sim-ml600/pump/value",
+        json=99.0,
+        status=200,
     )
 
     client.put(

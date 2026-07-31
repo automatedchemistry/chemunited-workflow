@@ -5,6 +5,7 @@ from __future__ import annotations
 import requests
 from fastapi import APIRouter, Depends, HTTPException
 
+from ...exceptions import DeviceCommunicationError
 from ..dependencies import get_monitoring_service
 from ..schemas import MonitoringConfigIn, MonitoringSessionOut
 from ..services.monitoring import MonitoringService
@@ -27,10 +28,10 @@ async def discover_component(
         return svc.discover(component, timeout=timeout)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
-    except requests.exceptions.RequestException as exc:
+    except (requests.exceptions.RequestException, DeviceCommunicationError) as exc:
         raise HTTPException(
             status_code=502,
-            detail=f"Device server unreachable or has no OpenAPI schema: {exc}",
+            detail=f"Device unreachable or discovery failed: {exc}",
         )
 
 

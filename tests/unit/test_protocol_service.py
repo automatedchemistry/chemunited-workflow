@@ -34,6 +34,21 @@ def svc(tmp_path):
             {"component": "pump", "component_url": "sim/pump"},
             {"component": "valve", "component_url": "sim/valve"},
             {"component": "empty", "component_url": ""},
+            {
+                "component": "sila-pump",
+                "protocol": "sila2",
+                "sila_host": "localhost",
+                "sila_port": 50999,
+                "sila_insecure": True,
+            },
+            {"component": "unconfigured-sila", "protocol": "sila2"},
+            {
+                "component": "opc-valve",
+                "protocol": "opcua",
+                "opcua_endpoint": "opc.tcp://localhost:4999",
+                "opcua_node_id": "ns=2;s=Root",
+            },
+            {"component": "unconfigured-opcua", "protocol": "opcua"},
         ],
     }
     (tmp_path / "connectivity" / "associations.json").write_text(
@@ -48,6 +63,25 @@ def svc(tmp_path):
         processes={},
         configs={},
         main_parameter_class=FakeMain,
+    )
+
+
+@pytest.fixture(autouse=True)
+def _no_real_device_connections(mocker):
+    """Safety net: `svc`'s associations.json includes sila2/opcua entries pointing
+    at hosts that don't exist. Without this, any test touching every configured
+    component (e.g. ping_components) would attempt a real, slow/hanging network
+    connection. Tests that want real sila2/opcua behavior patch these same targets
+    again with their own fakes further down in the test body — a later patch on
+    the same target takes precedence for the duration of that test.
+    """
+    mocker.patch(
+        "chemunited_workflow.clients.sila.SilaClient",
+        side_effect=ConnectionError("test-mock: no real sila2 server configured"),
+    )
+    mocker.patch(
+        "chemunited_workflow.clients.opcua.Client",
+        side_effect=ConnectionError("test-mock: no real opcua server configured"),
     )
 
 
@@ -324,17 +358,19 @@ def test_ping_connection_error(svc):
         f"{_MODULE}.get", side_effect=requests.exceptions.ConnectionError("refused")
     ):
         results = svc.ping_components()
-    for r in results:
-        assert r["online"] is False
-        assert r["error"].startswith("ConnectionError")
+    named = {r["component"]: r for r in results}
+    for name in ("pump", "valve"):
+        assert named[name]["online"] is False
+        assert named[name]["error"].startswith("ConnectionError")
 
 
 def test_ping_timeout(svc):
     with patch(f"{_MODULE}.get", side_effect=requests.exceptions.Timeout()):
         results = svc.ping_components()
-    for r in results:
-        assert r["online"] is False
-        assert r["error"].startswith("Timeout")
+    named = {r["component"]: r for r in results}
+    for name in ("pump", "valve"):
+        assert named[name]["online"] is False
+        assert named[name]["error"].startswith("Timeout")
 
 
 def test_ping_empty_url_skipped(svc):
@@ -350,7 +386,13 @@ def test_ping_two_valid_devices(svc):
     components = [r["component"] for r in results]
     assert "pump" in components
     assert "valve" in components
-    assert len(results) == 2
+    # sila-pump/opc-valve are also configured and pingable (protocol-agnostic);
+    # unconfigured-sila/unconfigured-opcua/empty are skipped, same as flowchem.
+    assert "sila-pump" in components
+    assert "opc-valve" in components
+    assert "unconfigured-sila" not in components
+    assert "unconfigured-opcua" not in components
+    assert len(results) == 4
 
 
 # ── is-reachable probe ──────────────────────────────────────────────────────
@@ -419,6 +461,52 @@ def test_ping_reachability_skipped_when_base_offline(svc):
     assert mock_get.call_count == 2
 
 
+def test_ping_component_sila2_success(mocker, svc):
+    from tests.unit.test_clients_sila import FakeSilaClient
+
+    mocker.patch("chemunited_workflow.clients.sila.SilaClient", FakeSilaClient)
+
+    result = svc.ping_component("sila-pump")
+
+    assert result["online"] is True
+    assert result["url"] == "sila2://localhost:50999"
+    assert result["status_code"] is None
+    assert result["reachability"] is None
+    assert result["reachability_supported"] is None
+
+
+def test_ping_component_sila2_unreachable(svc):
+    # relies on the file's autouse safety-net patch (SilaClient always raises)
+    result = svc.ping_component("sila-pump")
+
+    assert result["online"] is False
+    assert result["error"] == "test-mock: no real sila2 server configured"
+
+
+def test_ping_component_opcua_success(mocker, svc):
+    from tests.unit.test_clients_opcua import FakeClient
+
+    mocker.patch("chemunited_workflow.clients.opcua.Client", FakeClient)
+
+    result = svc.ping_component("opc-valve")
+
+    assert result["online"] is True
+    assert result["url"] == "opc.tcp://localhost:4999/ns=2;s=Root"
+
+
+def test_ping_component_unconfigured_sila2(svc):
+    result = svc.ping_component("unconfigured-sila")
+    assert result["online"] is False
+    assert result["error"] == "not configured"
+
+
+def test_ping_components_closes_all_clients(mocker, svc):
+    close_spy_http = mocker.patch("chemunited_workflow.clients.http.BaseClient.close")
+    svc.ping_components()
+    # pump + valve (empty/unconfigured-* are never registered by Platform)
+    assert close_spy_http.call_count == 2
+
+
 # ── write_protocol main_parameter injection ───────────────────────────────────
 
 
@@ -483,81 +571,209 @@ def test_get_component_commands_unknown_component_raises(svc):
         svc.get_component_commands("ghost")
 
 
+@resp_lib.activate
+def test_get_component_commands_closes_client(svc, mocker):
+    resp_lib.add(
+        resp_lib.GET,
+        "http://device-server:8000/openapi.json",
+        json=_FAKE_SCHEMA,
+        status=200,
+    )
+    close_spy = mocker.patch("chemunited_workflow.clients.http.BaseClient.close")
+    svc.get_component_commands("pump")
+    close_spy.assert_called_once()
+
+
+@resp_lib.activate
+def test_get_component_commands_survives_close_failure(svc, mocker):
+    """A close() failure must not mask a successful result, but should be logged."""
+    resp_lib.add(
+        resp_lib.GET,
+        "http://device-server:8000/openapi.json",
+        json=_FAKE_SCHEMA,
+        status=200,
+    )
+    mocker.patch(
+        "chemunited_workflow.clients.http.BaseClient.close",
+        side_effect=RuntimeError("connection already gone"),
+    )
+    warning_spy = mocker.patch(
+        "chemunited_workflow.api.services.protocol.logger.warning"
+    )
+
+    commands = svc.get_component_commands("pump")
+
+    assert commands["position_get"]["name"] == "position"
+    warning_spy.assert_called_once()
+
+
 # ── send_component_command ──────────────────────────────────────────────────
 
 
-def _command_response(
-    status_code: int,
-    json_body: object | None = None,
-    text_body: str = "",
-    elapsed_ms: float = 50.0,
-) -> MagicMock:
-    resp = MagicMock()
-    resp.status_code = status_code
-    resp.ok = 200 <= status_code < 300
-    resp.elapsed.total_seconds.return_value = elapsed_ms / 1000.0
-    if json_body is not None:
-        resp.json.return_value = json_body
-    else:
-        resp.json.side_effect = ValueError("no json")
-        resp.text = text_body
-    return resp
-
-
+@resp_lib.activate
 def test_send_component_command_get_success(svc):
-    with patch(
-        f"{_MODULE}.get", return_value=_command_response(200, json_body="online")
-    ):
-        result = svc.send_component_command("pump", "is-reachable", "get")
+    resp_lib.add(
+        resp_lib.GET,
+        "http://device-server:8000/sim/pump/is-reachable",
+        json="online",
+        status=200,
+    )
+    result = svc.send_component_command("pump", "is-reachable", "get")
 
     assert result["ok"] is True
     assert result["status_code"] == 200
     assert result["response"] == "online"
     assert result["url"] == "http://device-server:8000/sim/pump/is-reachable"
     assert result["error"] is None
+    assert isinstance(result["latency_ms"], int)
 
 
+@resp_lib.activate
 def test_send_component_command_put_success(svc):
-    with patch(
-        f"{_MODULE}.put",
-        return_value=_command_response(200, json_body={"rate": "5 ml/min"}),
-    ) as mock_put:
-        result = svc.send_component_command(
-            "pump", "infuse", "put", params={"rate": "5 ml/min"}
-        )
+    resp_lib.add(
+        resp_lib.PUT,
+        "http://device-server:8000/sim/pump/infuse",
+        json={"rate": "5 ml/min"},
+        status=200,
+    )
+    resp_lib.add(
+        resp_lib.GET,
+        "http://device-server:8000/sim/pump/is-idle",
+        body=b"true",
+        status=200,
+    )
+    result = svc.send_component_command(
+        "pump", "infuse", "put", params={"rate": "5 ml/min"}
+    )
 
     assert result["ok"] is True
     assert result["response"] == {"rate": "5 ml/min"}
-    mock_put.assert_called_once_with(
-        "http://device-server:8000/sim/pump/infuse",
-        timeout=5.0,
-        params={"rate": "5 ml/min"},
-        json=None,
-    )
 
 
+@resp_lib.activate
 def test_send_component_command_non_json_response_falls_back_to_text(svc):
-    with patch(f"{_MODULE}.get", return_value=_command_response(200, text_body="OK")):
-        result = svc.send_component_command("pump", "raw", "get")
+    resp_lib.add(
+        resp_lib.GET,
+        "http://device-server:8000/sim/pump/raw",
+        body="OK",
+        status=200,
+        content_type="text/plain",
+    )
+    result = svc.send_component_command("pump", "raw", "get")
     assert result["response"] == "OK"
 
 
+@resp_lib.activate
 def test_send_component_command_error_status(svc):
-    with patch(f"{_MODULE}.get", return_value=_command_response(503, json_body={})):
-        result = svc.send_component_command("pump", "infuse", "get")
+    resp_lib.add(
+        resp_lib.GET,
+        "http://device-server:8000/sim/pump/infuse",
+        json={},
+        status=503,
+    )
+    result = svc.send_component_command("pump", "infuse", "get")
     assert result["ok"] is False
     assert result["status_code"] == 503
     assert result["error"] == "HTTP 503"
 
 
+@resp_lib.activate
 def test_send_component_command_connection_error(svc):
-    with patch(
-        f"{_MODULE}.get", side_effect=requests.exceptions.ConnectionError("refused")
-    ):
-        result = svc.send_component_command("pump", "infuse", "get")
+    resp_lib.add(
+        resp_lib.GET,
+        "http://device-server:8000/sim/pump/infuse",
+        body=requests.exceptions.ConnectionError("refused"),
+    )
+    result = svc.send_component_command("pump", "infuse", "get")
     assert result["ok"] is False
     assert result["status_code"] is None
     assert result["error"].startswith("ConnectionError")
+
+
+@resp_lib.activate
+def test_send_component_command_closes_client(svc, mocker):
+    resp_lib.add(
+        resp_lib.GET,
+        "http://device-server:8000/sim/pump/is-reachable",
+        json="online",
+        status=200,
+    )
+    close_spy = mocker.patch("chemunited_workflow.clients.http.BaseClient.close")
+    svc.send_component_command("pump", "is-reachable", "get")
+    close_spy.assert_called_once()
+
+
+def test_send_component_command_sila2_success(mocker, svc):
+    from tests.unit.test_clients_sila import FakeFeature, FakeProperty, FakeSilaClient
+
+    mocker.patch("chemunited_workflow.clients.sila.SilaClient", FakeSilaClient)
+    feature = FakeFeature(
+        "Thermostat",
+        properties={"Temperature": FakeProperty("Temperature", value=21.5)},
+    )
+
+    def build_and_inject(*args, **kwargs):
+        client = FakeSilaClient(*args, **kwargs)
+        client._features[feature._identifier] = feature
+        return client
+
+    mocker.patch(
+        "chemunited_workflow.clients.sila.SilaClient", side_effect=build_and_inject
+    )
+
+    result = svc.send_component_command("sila-pump", "Thermostat.Temperature", "get")
+
+    assert result["ok"] is True
+    assert result["status_code"] is None
+    assert result["response"] == 21.5
+    assert result["url"] == "sila2://localhost:50999/Thermostat.Temperature"
+
+
+def test_send_component_command_sila2_device_error(mocker, svc):
+    from tests.unit.test_clients_sila import FakeCommand, FakeFeature
+
+    command = FakeCommand("SetPoint", error=RuntimeError("device offline"))
+    feature = FakeFeature("Thermostat", commands={"SetPoint": command})
+
+    def build_and_inject(*args, **kwargs):
+        from tests.unit.test_clients_sila import FakeSilaClient
+
+        client = FakeSilaClient(*args, **kwargs)
+        client._features[feature._identifier] = feature
+        return client
+
+    mocker.patch(
+        "chemunited_workflow.clients.sila.SilaClient", side_effect=build_and_inject
+    )
+
+    result = svc.send_component_command(
+        "sila-pump", "Thermostat.SetPoint", "put", json_body={"value": 30}
+    )
+
+    assert result["ok"] is False
+    assert result["status_code"] is None
+    assert "device offline" in result["error"]
+
+
+def test_send_component_command_opcua_success(mocker, svc):
+    from tests.unit.test_clients_opcua import FakeClient, FakeNode
+
+    temp_node = FakeNode(value=21.5)
+    root = FakeNode(children={"2:Temperature": temp_node})
+
+    def build_and_inject(endpoint):
+        client = FakeClient(endpoint)
+        client._root = root
+        return client
+
+    mocker.patch(
+        "chemunited_workflow.clients.opcua.Client", side_effect=build_and_inject
+    )
+
+    result = svc.send_component_command("opc-valve", "2:Temperature", "get")
+
+    assert result["ok"] is True
+    assert result["response"] == 21.5
 
 
 def test_send_component_command_unknown_component_raises(svc):
