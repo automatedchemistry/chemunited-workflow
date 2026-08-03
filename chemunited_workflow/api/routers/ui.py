@@ -16,15 +16,35 @@ from ..project_holder import ProjectHolder
 
 router = APIRouter(include_in_schema=False)
 
-_WEB_INDEX = Path(__file__).parent.parent.parent / "web" / "index.html"
+_WEB_DIR = Path(__file__).parent.parent.parent / "web"
+_WEB_INDEX = _WEB_DIR / "index.html"
+
+
+def _safe_join(base: Path, filename: str) -> Path | None:
+    """Resolve *filename* under *base*, or None if it would escape it."""
+    candidate = (base / filename).resolve()
+    if not candidate.is_relative_to(base.resolve()):
+        return None
+    return candidate
+
+
+def _resolve_index(holder: ProjectHolder) -> Path:
+    """Prefer a project-supplied dashboard build over the bundled one."""
+    if holder.project_dir is not None:
+        override = holder.project_dir / "ui" / "dist" / "index.html"
+        if override.is_file():
+            return override
+    return _WEB_INDEX
 
 
 # ── Pages ─────────────────────────────────────────────────────────────────────
 
 
 @router.get("/")
-async def dashboard() -> FileResponse:
-    return FileResponse(_WEB_INDEX)
+async def dashboard(
+    holder: ProjectHolder = Depends(get_project_holder),
+) -> FileResponse:
+    return FileResponse(_resolve_index(holder))
 
 
 @router.get("/run-control")
@@ -32,8 +52,25 @@ async def dashboard() -> FileResponse:
 @router.get("/monitoring")
 @router.get("/logs")
 @router.get("/devices")
-async def vue_page() -> FileResponse:
-    return FileResponse(_WEB_INDEX)
+async def vue_page(
+    holder: ProjectHolder = Depends(get_project_holder),
+) -> FileResponse:
+    return FileResponse(_resolve_index(holder))
+
+
+@router.get("/assets/{filename:path}")
+async def dashboard_asset(
+    filename: str,
+    holder: ProjectHolder = Depends(get_project_holder),
+) -> FileResponse:
+    if holder.project_dir is not None:
+        candidate = _safe_join(holder.project_dir / "ui" / "dist" / "assets", filename)
+        if candidate is not None and candidate.is_file():
+            return FileResponse(candidate)
+    candidate = _safe_join(_WEB_DIR / "assets", filename)
+    if candidate is not None and candidate.is_file():
+        return FileResponse(candidate)
+    raise HTTPException(status_code=404, detail=f"Asset '{filename}' not found.")
 
 
 # ── HTMX fragments ────────────────────────────────────────────────────────────
@@ -129,8 +166,8 @@ async def project_static(
 ) -> Response:
     if not holder.is_loaded() or holder.project_dir is None:
         raise HTTPException(status_code=404, detail="No project loaded.")
-    file_path: Path = holder.project_dir / "ui" / "static" / filename
-    if not file_path.is_file():
+    file_path = _safe_join(holder.project_dir / "ui" / "static", filename)
+    if file_path is None or not file_path.is_file():
         raise HTTPException(
             status_code=404, detail=f"Static file '{filename}' not found."
         )

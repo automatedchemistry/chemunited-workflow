@@ -398,6 +398,45 @@ def test_vue_routes_return_spa_shell(client, path):
     assert '<div id="app"></div>' in r.text
 
 
+# ── Per-project dashboard override ──────────────────────────────────────────
+
+
+def test_dashboard_override_index(client, project):
+    dist_dir = project["tmp_path"] / "ui" / "dist"
+    dist_dir.mkdir(parents=True)
+    (dist_dir / "index.html").write_text(
+        "<html><body>CUSTOM DASHBOARD MARKER</body></html>", encoding="utf-8"
+    )
+
+    for path in ("/", "/run-control"):
+        r = client.get(path)
+        assert r.status_code == 200
+        assert "CUSTOM DASHBOARD MARKER" in r.text
+
+
+def test_dashboard_asset_override(client, project):
+    assets_dir = project["tmp_path"] / "ui" / "dist" / "assets"
+    assets_dir.mkdir(parents=True)
+    (assets_dir / "custom.js").write_text("console.log('override');", encoding="utf-8")
+
+    r = client.get("/assets/custom.js")
+    assert r.status_code == 200
+    assert "override" in r.text
+
+
+def test_dashboard_asset_falls_back_to_bundled(client):
+    from chemunited_workflow.api.routers.ui import _WEB_DIR
+
+    bundled = next((_WEB_DIR / "assets").iterdir())
+    r = client.get(f"/assets/{bundled.name}")
+    assert r.status_code == 200
+
+
+def test_dashboard_asset_path_traversal(client):
+    r = client.get("/assets/..%2F..%2Fpyproject.toml")
+    assert r.status_code == 404
+
+
 def test_list_logs(client):
     r = client.get("/logs/")
     assert r.status_code == 200

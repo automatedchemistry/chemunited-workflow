@@ -16,8 +16,8 @@ A NetworkX-based workflow execution engine for conditional automation of chemist
 - **Multiple deployment modes**: FastAPI REST API, MCP server, or direct Python execution
 - **Protocol versioning** with timestamped file history and schema validation
 - **Single-run execution model** — only one experiment at a time; `POST /run/` returns HTTP 409 if a run is already active, preventing accidental double-dispatch on physical hardware
-- **Browser-based HTML dashboard** with live run monitoring, log viewer, and device status — served directly from the FastAPI app, no build step required
-- **Customisable per-project UI** — drop templates into `ui/templates/` to override pages for your experiment
+- **Browser-based dashboard** (Vue SPA) with live run monitoring, log viewer, and device status — its built assets ship with the package, no build step required to use it
+- **Customisable per-project dashboard** — drop a pre-built SPA into `{project}/ui/dist/` to override the bundled UI; falls back automatically when absent
 - **Standalone sensor monitoring** — register device variables, start polling sessions independent of protocol runs, and read back time-series profiles
 
 ## Documentation
@@ -25,7 +25,7 @@ A NetworkX-based workflow execution engine for conditional automation of chemist
 - [Installation](docs/installation.md)
 - [Quick Start & Project Structure](docs/quickstart.md)
 - [Deployment Modes](docs/deployment.md) — FastAPI, MCP, Windows tray
-- [HTML UI](docs/html-ui.md) — dashboard, templates, customisation
+- [HTML UI](docs/html-ui.md) — dashboard pages, per-project overrides, and how the Vue SPA is built
 - [API Reference](docs/api-reference.md)
 - [MCP Tools](docs/mcp-tools.md)
 - [Concepts](docs/concepts.md) — execution model, physical units, dry-run
