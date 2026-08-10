@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from time import time
-from typing import TYPE_CHECKING, Any, Self
+from typing import TYPE_CHECKING, Any, Callable, Self
 
 import networkx as nx
 from pydantic import BaseModel, ConfigDict, model_validator
@@ -60,6 +60,7 @@ class NodeRuntime:
     """Mutable node-local runtime state."""
 
     status_message: str = ""
+    status_percentage: int = 0
     result: bool | None = None
     error: Exception | None = None
     started_at: float | None = None
@@ -77,6 +78,14 @@ class NodeExecutionContext:
     config: BaseModel
     node_config: NodeConfig | None
     runtime: NodeRuntime
+    _progress_callback: Callable[[int, str | None], None] | None = field(
+        default=None, repr=False
+    )
+
+    def report_progress(self, percentage: int, message: str | None = None) -> None:
+        """Report live progress (0-100) and an optional status message for this node."""
+        if self._progress_callback is not None:
+            self._progress_callback(percentage, message)
 
 
 @dataclass(slots=True)
@@ -116,6 +125,7 @@ class WorkflowResult:
             "node_runtime": {
                 f"{k[0]}:{k[1]}": {
                     "status_message": v.status_message,
+                    "status_percentage": v.status_percentage,
                     "result": v.result,
                     "error": str(v.error) if v.error else None,
                     "started_at": v.started_at,
@@ -143,6 +153,7 @@ class WorkflowExecutionEvent:
     target: str | None = None
     active_predecessor_count: int | None = None
     completed_predecessor_count: int | None = None
+    percentage: int | None = None
     timestamp: float = field(default_factory=time)
 
     def model_dump(self) -> dict:
@@ -158,6 +169,7 @@ class WorkflowExecutionEvent:
             "target": self.target,
             "active_predecessor_count": self.active_predecessor_count,
             "completed_predecessor_count": self.completed_predecessor_count,
+            "percentage": self.percentage,
             "timestamp": self.timestamp,
         }
 

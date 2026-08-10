@@ -3,6 +3,8 @@
 # Project name: complete
 from __future__ import annotations
 
+import time
+
 import networkx as nx
 from pydantic import BaseModel, ConfigDict
 
@@ -168,17 +170,23 @@ class CustomProcess(Process[ProcessConfig]):
         return True
 
     def script_1(self, ctx: NodeExecutionContext) -> bool:
-        ctx.runtime.status_message = "Script 1 ran."
+        ctx.report_progress(0, "Script 1 starting.")
+        time.sleep(0.4)
+        ctx.report_progress(50, "Script 1 halfway.")
+        time.sleep(0.4)
+        ctx.report_progress(100, "Script 1 ran.")
         return True
 
     def loop_1(self, ctx: NodeExecutionContext) -> bool:
-        ctx.runtime.status_message = "Loop 1 ran."
+        ctx.report_progress(0, "Loop 1 evaluating exit condition.")
+        time.sleep(0.3)
+        ctx.report_progress(100, "Loop 1 ran.")
         return True
 
     def command_1(self, ctx: NodeExecutionContext) -> bool:
         from loguru import logger
 
-        ctx.runtime.status_message = "Command 1 ran."
+        ctx.report_progress(0, "Command 1 starting: moving AS injection valve.")
 
         logger.info("Process clean: Command 1 started.")
         self.platform["AS injection"].put(
@@ -187,4 +195,6 @@ class CustomProcess(Process[ProcessConfig]):
             disconnect="",
         )
         logger.info("Process clean: Command 1 finished.")
+
+        ctx.report_progress(100, "Command 1 ran.")
         return True

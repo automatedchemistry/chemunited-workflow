@@ -3,9 +3,11 @@
 # Project name: complete
 from __future__ import annotations
 
+import time
+from typing import TYPE_CHECKING
+
 import networkx as nx
 from pydantic import BaseModel, ConfigDict
-from typing import TYPE_CHECKING
 
 from chemunited_workflow import (
     NodeExecutionContext,
@@ -352,53 +354,101 @@ class CustomProcess(Process[ProcessConfig]):
         return True
 
     def script_1(self, ctx: NodeExecutionContext) -> bool:
-        ctx.runtime.status_message = "Script 1 ran."
+        ctx.report_progress(0, "Script 1 fanning out into two branches.")
+        time.sleep(0.3)
+        ctx.report_progress(60, "Script 1 preparing branch inputs.")
+        time.sleep(0.3)
+        ctx.report_progress(100, "Script 1 ran.")
         return True
 
     def script_2(self, ctx: NodeExecutionContext) -> bool:
-        ctx.runtime.status_message = "Script 2 ran."
+        ctx.report_progress(0, "Script 2 (branch A) starting.")
+        time.sleep(0.3)
+        ctx.report_progress(45, "Script 2 (branch A) working.")
+        time.sleep(0.3)
+        ctx.report_progress(100, "Script 2 ran.")
         return True
 
     def script_3(self, ctx: NodeExecutionContext) -> bool:
-        ctx.runtime.status_message = "Script 3 ran."
+        ctx.report_progress(0, "Script 3 (branch B) starting.")
+        time.sleep(0.3)
+        ctx.report_progress(45, "Script 3 (branch B) working.")
+        time.sleep(0.3)
+        ctx.report_progress(100, "Script 3 ran.")
         return True
 
     def script_4(self, ctx: NodeExecutionContext) -> bool:
-        ctx.runtime.status_message = "Script 4 ran."
+        ctx.report_progress(0, "Script 4 (branch A.1) starting.")
+        time.sleep(0.2)
+        ctx.report_progress(70, "Script 4 (branch A.1) almost done.")
+        time.sleep(0.2)
+        ctx.report_progress(100, "Script 4 ran.")
         return True
 
     def script_5(self, ctx: NodeExecutionContext) -> bool:
-        ctx.runtime.status_message = "Script 5 ran."
+        ctx.report_progress(0, "Script 5 (branch A.2) starting.")
+        time.sleep(0.2)
+        ctx.report_progress(70, "Script 5 (branch A.2) almost done.")
+        time.sleep(0.2)
+        ctx.report_progress(100, "Script 5 ran.")
         return True
 
     def loop_1(self, ctx: NodeExecutionContext) -> bool:
-        ctx.runtime.status_message = "Loop 1 ran."
+        ctx.report_progress(0, "Loop 1 evaluating branch join.")
+        time.sleep(0.3)
+        ctx.report_progress(100, "Loop 1 ran.")
         return True
 
     def conditional_1(self, ctx: NodeExecutionContext) -> bool:
-        ctx.runtime.status_message = "Conditional 1 ran."
+        ctx.report_progress(0, "Conditional 1 checking branch B result.")
+        time.sleep(0.2)
+        ctx.report_progress(100, "Conditional 1 ran.")
         return True
 
     def script_6(self, ctx: NodeExecutionContext) -> bool:
-        ctx.runtime.status_message = "Script 6 ran."
+        ctx.report_progress(0, "Script 6 (branch B.1) starting.")
+        time.sleep(0.2)
+        ctx.report_progress(55, "Script 6 (branch B.1) working.")
+        time.sleep(0.2)
+        ctx.report_progress(100, "Script 6 ran.")
         return True
 
     def script_7(self, ctx: NodeExecutionContext) -> bool:
-        ctx.runtime.status_message = "Script 7 ran."
+        ctx.report_progress(0, "Script 7 (branch B.2) starting.")
+        time.sleep(0.2)
+        ctx.report_progress(55, "Script 7 (branch B.2) working.")
+        time.sleep(0.2)
+        ctx.report_progress(100, "Script 7 ran.")
         return True
 
     def script_8(self, ctx: NodeExecutionContext) -> bool:
-        ctx.runtime.status_message = "Script 8 ran."
+        ctx.report_progress(0, "Script 8 joining branches A and B.")
+        time.sleep(0.3)
+        ctx.report_progress(50, "Script 8 merging results.")
+        time.sleep(0.3)
+        ctx.report_progress(100, "Script 8 ran.")
         return True
 
     def script_9(self, ctx: NodeExecutionContext) -> bool:
-        ctx.runtime.status_message = "Script 9 ran."
+        ctx.report_progress(0, "Script 9 starting.")
+        time.sleep(0.2)
+        ctx.report_progress(80, "Script 9 finishing up.")
+        time.sleep(0.2)
+        ctx.report_progress(100, "Script 9 ran.")
         return True
 
     def script_10(self, ctx: NodeExecutionContext) -> bool:
-        ctx.runtime.status_message = "Script 10 ran."
+        ctx.report_progress(0, "Script 10 starting.")
+        time.sleep(0.2)
+        ctx.report_progress(80, "Script 10 finishing up.")
+        time.sleep(0.2)
+        ctx.report_progress(100, "Script 10 ran.")
         return True
 
     def script_11(self, ctx: NodeExecutionContext) -> bool:
-        ctx.runtime.status_message = "Script 11 ran."
+        ctx.report_progress(0, "Script 11 finalizing all branches.")
+        time.sleep(0.3)
+        ctx.report_progress(65, "Script 11 wrapping up.")
+        time.sleep(0.3)
+        ctx.report_progress(100, "Script 11 ran.")
         return True

@@ -326,6 +326,9 @@ class WorkflowExecutor:
             runtime.started_at = perf_counter()
             runtime.status_message = f"Running method '{method_name}'."
 
+        def _report_progress(percentage: int, message: str | None = None) -> None:
+            self._handle_node_progress(node_key, percentage, message)
+
         ctx = NodeExecutionContext(
             node_id=node_id,
             iteration=iteration,
@@ -333,6 +336,7 @@ class WorkflowExecutor:
             config=self._process.config,
             node_config=node_config,
             runtime=runtime,
+            _progress_callback=_report_progress,
         )
 
         _pop_thread_resilient_errors()  # clear stale errors from thread pool reuse
@@ -542,7 +546,12 @@ class WorkflowExecutor:
         method: str | None = None,
     ) -> None:
         self._state.node_state[node_key] = state
-        self._state.node_runtime[node_key].status_message = message
+        runtime = self._state.node_runtime[node_key]
+        runtime.status_message = message
+        if state == NodeState.RUNNING:
+            runtime.status_percentage = 0
+        elif state == NodeState.COMPLETED:
+            runtime.status_percentage = 100
         self._emit_event(
             event_type=event_type,
             message=message,
@@ -550,6 +559,28 @@ class WorkflowExecutor:
             state=state,
             result=result,
             method=method,
+            percentage=runtime.status_percentage,
+        )
+
+    def _handle_node_progress(
+        self, node_key: NodeKey, percentage: int, message: str | None = None
+    ) -> None:
+        clamped = max(0, min(100, int(percentage)))
+        with self._lock:
+            runtime = self._state.node_runtime[node_key]
+            runtime.status_percentage = clamped
+            if message is not None:
+                runtime.status_message = message
+            current_message = runtime.status_message
+
+        node_id, _ = node_key
+        self._emit_event(
+            event_type=WorkflowEventType.NODE_PROGRESS,
+            message=current_message,
+            node_key=node_key,
+            state=NodeState.RUNNING,
+            method=self._compiled.exec_graph.nodes[node_id].get("method"),
+            percentage=clamped,
         )
 
     def _emit_event(
@@ -563,6 +594,7 @@ class WorkflowExecutor:
         method: str | None = None,
         source: str | None = None,
         target: str | None = None,
+        percentage: int | None = None,
     ) -> None:
         event = WorkflowExecutionEvent(
             event_type=event_type,
@@ -584,6 +616,7 @@ class WorkflowExecutor:
                 if node_key is not None
                 else None
             ),
+            percentage=percentage,
         )
 
         for listener in self._event_listeners:

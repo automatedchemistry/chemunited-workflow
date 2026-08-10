@@ -16,7 +16,7 @@ A NetworkX-based workflow execution engine for conditional automation of chemist
 - **Multiple deployment modes**: FastAPI REST API, MCP server, or direct Python execution
 - **Protocol versioning** with timestamped file history and schema validation
 - **Single-run execution model** — only one experiment at a time; `POST /run/` returns HTTP 409 if a run is already active, preventing accidental double-dispatch on physical hardware
-- **Browser-based dashboard** (Vue SPA) with live run monitoring, log viewer, and device status — its built assets ship with the package, no build step required to use it
+- **Browser-based dashboard** (Vue SPA) with live run monitoring, per-node progress bars, log viewer, and device status — its built assets ship with the package, no build step required to use it
 - **Customisable per-project dashboard** — drop a pre-built SPA into `{project}/ui/dist/` to override the bundled UI; falls back automatically when absent
 - **Standalone sensor monitoring** — register device variables, start polling sessions independent of protocol runs, and read back time-series profiles
 

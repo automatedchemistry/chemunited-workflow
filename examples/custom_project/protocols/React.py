@@ -235,53 +235,66 @@ class CustomProcess(Process[ProcessConfig]):
         return True
 
     def script_1(self, ctx: NodeExecutionContext) -> bool:
-        ctx.runtime.status_message = "Script 1 ran."
+        ctx.report_progress(0, "Infusing AS pump: 10 ml at 50 ml/min.")
         self.platform["AS pump"].put("infuse", volume="10 ml", rate="50 ml/min")
+        ctx.report_progress(100, "Script 1 ran.")
         return True
 
     def script_2(self, ctx: NodeExecutionContext) -> bool:
-        ctx.runtime.status_message = "Script 2 ran."
+        ctx.report_progress(0, "Infusing Quencher pump: 5 ml at 15 ml/min.")
         self.platform["Quencher pump"].put("infuse", volume="5 ml", rate="15 ml/min")
+        ctx.report_progress(100, "Script 2 ran.")
         return True
 
     def script_3(self, ctx: NodeExecutionContext) -> bool:
-        ctx.runtime.status_message = "Script 3 ran."
+        ctx.report_progress(0, "Infusing Reagent pump: 5 ml at 20 ml/min.")
         self.platform["Reagent pump"].put("infuse", rate="20 ml/min", volume="5 ml")
+        ctx.report_progress(100, "Script 3 ran.")
         return True
 
     def script_4(self, ctx: NodeExecutionContext) -> bool:
-        ctx.runtime.status_message = "Script 4 ran."
+        ctx.report_progress(0, "Switching Disposal valve to position [[1, 2]].")
         self.platform["Disposal valve"].put("position", connect="[[1, 2]]")
+        ctx.report_progress(50, "Setting Relay channels.")
         self.platform["Relay"].put("multiple_channel", values="02000000")
+        ctx.report_progress(100, "Script 4 ran.")
         return True
 
     def script_5(self, ctx: NodeExecutionContext) -> bool:
-        ctx.runtime.status_message = "Script 5 ran."
+        ctx.report_progress(0, "Positioning AS Distribution valve.")
         self.platform["AS Distribution valve"].put("position", connect="[[0, 2]]")
         self.platform["AS pump"].put("infuse", volume="10 ml", rate="50 ml/min")
+        ctx.report_progress(25, "Dispensed. Positioning gantry over sample.")
         self.platform["gantry"].put("set_x_position", position="1")
         self.platform["gantry"].put("set_y_position", position="A")
         self.platform["gantry"].put("set_z_position", position="DOWN")
+        ctx.report_progress(50, "Gantry in place. Priming injection loop.")
         # platform["AS SP valve"].put("position", connect="[[2, 3]]")
         self.platform["AS Distribution valve"].put("position", connect="[[0, 1]]")
         self.platform["AS injection"].put("position", connect="[[4, 5]]")
+        ctx.report_progress(75, "Loop primed. Withdrawing sample.")
         self.platform["AS pump"].put("withdraw", volume="10 ml", rate="50 ml/min")
         self.platform["AS injection"].put("position", connect="[[5, 6]]")
+        ctx.report_progress(100, "Script 5 ran.")
         return True
 
     def script_6(self, ctx: NodeExecutionContext) -> bool:
-        ctx.runtime.status_message = "Script 6 ran."
+        ctx.report_progress(0, "Opening Quencher valve for infuse.")
         self.platform["Quencher valve"].put("position", connect="[[0, 4]]")
         self.platform["Quencher pump"].put("infuse", volume="10 ml", rate="25 ml/min")
+        ctx.report_progress(60, "Infused. Switching valve to withdraw.")
         self.platform["Quencher valve"].put("position", connect="[[0, 3]]")
         self.platform["Quencher pump"].put("withdraw", volume="5 ml", rate="25 ml/min")
         self.platform["Quencher valve"].put("position", connect="[[0, 5]]")
+        ctx.report_progress(100, "Script 6 ran.")
         return True
 
     def script_7(self, ctx: NodeExecutionContext) -> bool:
-        ctx.runtime.status_message = "Script 7 ran."
+        ctx.report_progress(0, "Opening Reagent valve for withdraw.")
         self.platform["Reagent Valve"].put("position", connect="[[0, 1]]")
         self.platform["Reagent pump"].put("withdraw", volume="10 ml", rate="25 ml/min")
+        ctx.report_progress(65, "Withdrawn. Restoring valve, powering relay.")
         self.platform["Reagent Valve"].put("position", connect="[[0, 5]]")
         self.platform["Relay"].put("power-on", channel="1")
+        ctx.report_progress(100, "Script 7 ran.")
         return True

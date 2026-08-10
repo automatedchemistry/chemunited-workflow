@@ -8,6 +8,28 @@
 4. **Events** — The executor emits `WorkflowExecutionEvent` objects for each state transition, consumed by the API to provide real-time status and log streaming.
 5. **Result** — A `WorkflowResult` is returned with the final state, per-node results, runtime, and any errors.
 
+## Node Progress Feedback
+
+Every node method receives a `NodeExecutionContext` (`ctx`). Beyond `ctx.process`, `ctx.config`, and `ctx.node_config`, it carries `ctx.runtime` (a `NodeRuntime`) and a live callback for pushing progress from *inside* a running method:
+
+```python
+def dose_reagent(self, ctx: NodeExecutionContext) -> bool:
+    ctx.report_progress(0, "Priming line.")
+    self.platform["reagent_pump"].put("infuse", volume="2 ml", rate="10 ml/min")
+
+    ctx.report_progress(60, "Reagent dosed, flushing line.")
+    self.platform["reagent_pump"].put("infuse", volume="0.5 ml", rate="10 ml/min")
+
+    ctx.report_progress(100, "Dosing complete.")
+    return True
+```
+
+- **`ctx.report_progress(percentage, message=None)`** emits a `NODE_PROGRESS` event immediately — not just at node start/finish — so anything watching the event stream (the dashboard's Run Control page, a custom listener, `GET /run/status`) sees the update while the node is still executing. `percentage` is clamped to `0`–`100`; `message` is optional — omit it to update only the percentage.
+- **Auto-managed baseline** — you don't have to call `report_progress` at all. The executor resets `status_percentage` to `0` when a node starts running and sets it to `100` when it completes, so every node always has a sane value. `report_progress` is opt-in, for finer-grained detail inside longer-running methods.
+- **Live snapshot, not a log** — each call overwrites `runtime.status_message` / `runtime.status_percentage` in place. There's no history; it's "what's happening right now" for that node. If you need a durable record of intermediate steps, log them separately (e.g. via `loguru`) rather than relying on progress messages.
+- **Where it surfaces** — `NodeRuntime.status_message` / `status_percentage` are included in `WorkflowResult.model_dump()` (`node_runtime` map) for post-run inspection, and every `NODE_PROGRESS` event carries `node_key`, `percentage`, and `message` over `/run/stream` (SSE) and `/run/status` (polling) — see [API Reference](api-reference.md#run-control). The bundled dashboard renders one row per node under its process card, with a live progress bar and label — see [HTML UI](html-ui.md#live-node-progress).
+- Assigning `ctx.runtime.status_message` directly (an older convention still visible in some example protocols) has **no visible effect**: the executor overwrites `status_message` itself at every lifecycle transition (`"Running method '...'."`, `"Node completed with result ...."`), so a manual mid-method assignment is always clobbered before anything reads it. Use `report_progress` for any message you want to actually reach the dashboard or event stream.
+
 ## Physical Units
 
 Use `ChemUnitQuantity` from `chemunited-quantities` for values that carry SI units:

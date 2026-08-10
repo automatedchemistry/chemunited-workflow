@@ -36,6 +36,8 @@ class MyWorkflow(Process[MyConfig]):
         return client.get("status")["ready"]
 ```
 
+Any node method can push live progress back to the dashboard while it's still running, via `ctx.report_progress(percentage, message)` — see [Concepts → Node Progress Feedback](concepts.md#node-progress-feedback).
+
 ### 2. Configure device connectivity
 
 Create `connectivity/associations.json`:

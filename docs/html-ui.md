@@ -7,13 +7,25 @@ When the FastAPI server is running, open `http://127.0.0.1:3116/` to access the 
 | Page | URL | Description |
 |------|-----|-------------|
 | Dashboard | `/` | Active run status, protocol/process counts, platform device map, quick links |
-| Run Control | `/run-control` | Start/cancel runs, live event feed via SSE |
+| Run Control | `/run-control` | Start/cancel runs, live event feed via SSE, per-node progress bars |
 | Protocols | `/protocols` | List and manage saved protocol files |
 | Monitoring | `/monitoring` | Live sensor monitoring sessions and time-series profiles |
 | Devices | `/devices` | Component connectivity map and ping check |
 | Logs | `/logs` | Browse and tail log files |
 
 Every route above is served by the same `index.html` (see `chemunited_workflow/api/routers/ui.py`); Vue Router handles client-side navigation between pages, and Pinia (`stores/runStatus.ts`) tracks shared run state across them.
+
+## Live node progress
+
+Run Control shows one card per process step (`clean_0`, `react_1`, ...). As a run reaches each node inside a process, a row for it appears in that card — incrementally, not all up front — with a progress bar and a status label:
+
+- **Percentage** starts at `0%` when the node starts running and reaches `100%` on completion, even if the node never reports anything itself.
+- **Message** is a live snapshot, not a log — it always shows whatever was reported most recently, and is replaced (not appended to) on the next update.
+- A **failed** node's row turns red and keeps whatever percentage/message it last reported, instead of silently freezing mid-progress.
+
+This comes entirely from the `node_key`-bearing events already described in [API Reference → Event schema](api-reference.md#event-schema-runstatus-and-runstream) — the dashboard doesn't poll anything extra for it. To get finer-grained bars than the automatic `0% → 100%` jump, node authors call `ctx.report_progress(percentage, message)` from inside a node method; see [Concepts → Node Progress Feedback](concepts.md#node-progress-feedback) for the authoring side.
+
+If you build a custom dashboard (per-project override or fully independent), the same data is available from `GET /run/stream` or `GET /run/status` — group events by `node_key` the same way `RunControlView.vue` does (`.web-chemunited/src/views/RunControlView.vue`, `stores/runStatus.ts`).
 
 ## Per-project override
 

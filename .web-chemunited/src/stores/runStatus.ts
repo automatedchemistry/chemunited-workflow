@@ -3,6 +3,15 @@ import { ref } from 'vue'
 
 export type RunState = 'idle' | 'running' | 'finished' | 'failed' | 'cancelled'
 
+export interface NodeCard {
+  nodeId: string
+  iteration: number
+  method: string
+  state: 'WAITING' | 'RUNNING' | 'COMPLETED' | 'INACTIVE' | 'FAILED'
+  percentage: number
+  message: string
+}
+
 export interface ProcessCard {
   stepKey: string
   displayName: string
@@ -10,6 +19,7 @@ export interface ProcessCard {
   status: 'waiting' | 'running' | 'completed' | 'failed'
   hasFailed: boolean
   errorMessage: string
+  nodes: NodeCard[]
 }
 
 interface ActiveRunResponse {

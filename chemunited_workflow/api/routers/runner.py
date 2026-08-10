@@ -141,6 +141,12 @@ async def _generate_run_stream(
 
         await asyncio.sleep(poll_interval)
 
+    # The run can transition out of RUNNING between one poll's sleep and the
+    # next loop-condition check; any events appended in that gap would
+    # otherwise be dropped, so drain the queue once more before closing out.
+    for event in svc._run_store.pop_events():
+        yield f"data: {event.model_dump_json()}\n\n"
+
     yield f'data: {{"state": "{rec.state.value}"}}\n\n'
 
 

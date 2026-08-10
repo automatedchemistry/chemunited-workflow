@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue'
-import { type ProcessCard, type RunState, useRunStatusStore } from '../stores/runStatus'
+import { type NodeCard, type ProcessCard, type RunState, useRunStatusStore } from '../stores/runStatus'
 
 interface ProtocolMeta {
   filename: string
@@ -70,6 +70,7 @@ async function onProtocolChange() {
         status: 'waiting',
         hasFailed: false,
         errorMessage: '',
+        nodes: [],
       })
     }
     store.processCards = cards
@@ -121,6 +122,23 @@ function openStream() {
             }
           } else if (eventType === 'EXECUTION_FINISHED') {
             card.status = card.hasFailed ? 'failed' : 'completed'
+          }
+
+          // Per-node ("script block") progress — any event carrying a node_key
+          // updates (or creates) that node's row. Message/percentage are always
+          // overwritten in place: they're a live snapshot, not a history.
+          const nodeKey = data.node_key as [string, number] | null
+          if (nodeKey) {
+            const [nodeId, iteration] = nodeKey
+            let node = card.nodes.find(n => n.nodeId === nodeId && n.iteration === iteration)
+            if (!node) {
+              node = { nodeId, iteration, method: '', state: 'WAITING', percentage: 0, message: '' }
+              card.nodes.push(node)
+            }
+            if (data.state) node.state = data.state as NodeCard['state']
+            if (data.method) node.method = data.method as string
+            if (typeof data.percentage === 'number') node.percentage = data.percentage
+            if (typeof data.message === 'string') node.message = data.message
           }
         }
       }
@@ -387,6 +405,22 @@ onUnmounted(() => { closeStream() })
           <p v-if="card.status === 'failed' && card.errorMessage" class="process-error">
             {{ card.errorMessage }}
           </p>
+          <div v-if="card.nodes.length" class="node-list">
+            <div
+              v-for="node in card.nodes"
+              :key="`${node.nodeId}:${node.iteration}`"
+              :class="['node-row', node.state.toLowerCase()]"
+            >
+              <div class="node-row-header">
+                <span class="node-name">{{ node.method || node.nodeId }}</span>
+                <span class="node-percentage">{{ node.percentage }}%</span>
+              </div>
+              <div class="progress-track">
+                <div class="progress-fill" :style="{ width: node.percentage + '%' }" />
+              </div>
+              <p v-if="node.message" class="node-message">{{ node.message }}</p>
+            </div>
+          </div>
         </div>
       </div>
     </section>
@@ -794,6 +828,77 @@ onUnmounted(() => { closeStream() })
   background: var(--color-danger-soft);
   border-left: 2px solid var(--color-danger);
   border-radius: var(--radius-sm);
+}
+
+/* ── Node ("script block") list ────────────────────────── */
+.node-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-top: 0.6rem;
+  padding-top: 0.6rem;
+  border-top: 1px solid var(--color-border);
+}
+
+.node-row {
+  padding: 0.4rem 0.55rem;
+  border-radius: var(--radius-sm);
+  background: var(--color-background-soft);
+}
+
+.node-row-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-bottom: 0.3rem;
+}
+
+.node-name {
+  font-size: 0.76rem;
+  font-weight: 620;
+  color: var(--color-heading);
+}
+
+.node-percentage {
+  font-size: 0.72rem;
+  font-weight: 620;
+  color: var(--color-text-muted);
+  flex-shrink: 0;
+}
+
+.progress-track {
+  width: 100%;
+  height: 5px;
+  border-radius: 999px;
+  background: var(--color-border);
+  overflow: hidden;
+}
+
+.progress-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: var(--color-primary);
+  transition: width 0.3s ease;
+}
+
+.node-row.completed .progress-fill { background: var(--color-success); }
+.node-row.failed .progress-fill    { background: var(--color-danger); }
+.node-row.waiting .progress-fill,
+.node-row.inactive .progress-fill  { background: var(--color-text-muted); }
+
+.node-row.completed .node-percentage { color: var(--color-success); }
+.node-row.failed .node-percentage    { color: var(--color-danger); }
+
+.node-message {
+  margin: 0.3rem 0 0;
+  font-size: 0.73rem;
+  line-height: 1.35;
+  color: var(--color-text-muted);
+}
+
+.node-row.failed .node-message {
+  color: var(--color-danger);
 }
 
 /* ── Animations ─────────────────────────────────────── */

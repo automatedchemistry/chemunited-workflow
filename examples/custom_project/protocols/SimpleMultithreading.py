@@ -197,13 +197,119 @@ class CustomProcess(Process[ProcessConfig]):
             **WorkflowNodeSpec(
                 node_id="end",
                 method="finish",
-                position=(538.0, 170.0),
+                position=(1150.0, 300.0),
             ).model_dump(exclude_none=True),
             block_tag="end",
         )
 
+        graph.add_node(
+            "script_1",
+            **WorkflowNodeSpec(
+                node_id="script_1",
+                method="script_1",
+                position=(450.0, 100.0),
+            ).model_dump(exclude_none=True),
+            block_tag="script",
+        )
+
+        graph.add_node(
+            "script_2",
+            **WorkflowNodeSpec(
+                node_id="script_2",
+                method="script_2",
+                position=(450.0, 300.0),
+            ).model_dump(exclude_none=True),
+            block_tag="script",
+        )
+
+        graph.add_node(
+            "script_3",
+            **WorkflowNodeSpec(
+                node_id="script_3",
+                method="script_3",
+                position=(450.0, 500.0),
+            ).model_dump(exclude_none=True),
+            block_tag="script",
+        )
+
+        graph.add_node(
+            "script_4",
+            **WorkflowNodeSpec(
+                node_id="script_4",
+                method="script_4",
+                position=(800.0, 300.0),
+            ).model_dump(exclude_none=True),
+            block_tag="script",
+        )
+
+        graph.add_node(
+            "loop_1",
+            **WorkflowNodeSpec(
+                node_id="loop_1",
+                method="loop_1",
+                position=(975.0, 300.0),
+            ).model_dump(exclude_none=True),
+            block_tag="loop",
+        )
+
         graph.add_edge(
             "start",
+            "script_1",
+            **WorkflowEdgeSpec(
+                condition=True,
+            ).model_dump(exclude_none=True),
+        )
+
+        graph.add_edge(
+            "start",
+            "script_2",
+            **WorkflowEdgeSpec(
+                condition=True,
+            ).model_dump(exclude_none=True),
+        )
+
+        graph.add_edge(
+            "start",
+            "script_3",
+            **WorkflowEdgeSpec(
+                condition=True,
+            ).model_dump(exclude_none=True),
+        )
+
+        graph.add_edge(
+            "script_1",
+            "script_4",
+            **WorkflowEdgeSpec(
+                condition=True,
+            ).model_dump(exclude_none=True),
+        )
+
+        graph.add_edge(
+            "script_2",
+            "script_4",
+            **WorkflowEdgeSpec(
+                condition=True,
+            ).model_dump(exclude_none=True),
+        )
+
+        graph.add_edge(
+            "script_3",
+            "script_4",
+            **WorkflowEdgeSpec(
+                condition=True,
+            ).model_dump(exclude_none=True),
+        )
+
+        graph.add_edge(
+            "script_4",
+            "loop_1",
+            **WorkflowEdgeSpec(
+                condition=True,
+            ).model_dump(exclude_none=True),
+        )
+
+        graph.add_edge(
+            "loop_1",
             "end",
             **WorkflowEdgeSpec(
                 condition=True,
@@ -223,21 +329,44 @@ class CustomProcess(Process[ProcessConfig]):
         return True
 
     def script_1(self, ctx: NodeExecutionContext) -> bool:
-        ctx.runtime.status_message = "Script 1 ran."
+        ctx.report_progress(
+            0,
+            f"AS branch: infusing {self.config.as_pump_volume} at {self.config.as_pump_rate}.",
+        )
+        ctx.report_progress(50, "AS branch: infusion in progress.")
+        ctx.report_progress(100, "Script 1 ran.")
         return True
 
     def script_2(self, ctx: NodeExecutionContext) -> bool:
-        ctx.runtime.status_message = "Script 2 ran."
+        ctx.report_progress(
+            0,
+            f"Quench branch: dosing {self.config.quench_volume} at {self.config.quench_rate}.",
+        )
+        ctx.report_progress(50, "Quench branch: dosing in progress.")
+        ctx.report_progress(100, "Script 2 ran.")
         return True
 
     def loop_1(self, ctx: NodeExecutionContext) -> bool:
-        ctx.runtime.status_message = "Loop 1 ran."
+        ctx.report_progress(
+            0, f"Retrying up to {self.config.retry_count} time(s) if needed."
+        )
+        ctx.report_progress(100, "Loop 1 ran.")
         return True
 
     def script_3(self, ctx: NodeExecutionContext) -> bool:
-        ctx.runtime.status_message = "Script 3 ran."
+        ctx.report_progress(
+            0,
+            f"Reagent branch: dosing {self.config.reagent_volume} at {self.config.reagent_rate}.",
+        )
+        ctx.report_progress(50, "Reagent branch: dosing in progress.")
+        ctx.report_progress(100, "Script 3 ran.")
         return True
 
     def script_4(self, ctx: NodeExecutionContext) -> bool:
-        ctx.runtime.status_message = "Script 4 ran."
+        ctx.report_progress(0, "Joining parallel branches.")
+        if self.config.wait_for_feedback:
+            ctx.report_progress(40, "Waiting for device feedback before continuing.")
+        if self.config.enable_relay:
+            ctx.report_progress(70, "Triggering synchronized relay step.")
+        ctx.report_progress(100, "Script 4 ran.")
         return True

@@ -68,6 +68,28 @@ default `"10 s"`, or pass `""` to poll without a timeout.
 
 Set `error_resilient: true` to allow client-side errors (HTTP failures, timeouts) to be logged without stopping the entire run. Each node's commands still run to completion; the node is marked `FAILED` and its successors become `INACTIVE`, but independent branches continue normally. Defaults to `false`.
 
+### Event schema (`/run/status` and `/run/stream`)
+
+Both `GET /run/status` (`events` array) and `GET /run/stream` (one SSE `data:` frame per event) carry the same `WorkflowExecutionEvent` JSON shape:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `event_type` | string | One of `EXECUTION_STARTED`, `ITERATION_STARTED`, `NODE_WAITING`, `NODE_RUNNING`, `NODE_PROGRESS`, `NODE_COMPLETED`, `NODE_INACTIVE`, `NODE_FAILED`, `LOOPBACK_TRIGGERED`, `EXECUTION_FINISHED` |
+| `message` | string | Human-readable status for this event |
+| `process` | string \| null | The process step key, e.g. `"clean_0"` |
+| `node_key` | `[node_id, iteration]` \| null | Identifies the node; `null` for process-level events (`EXECUTION_STARTED`/`EXECUTION_FINISHED`) |
+| `state` | string \| null | `NodeState` at the time of the event (`WAITING`, `RUNNING`, `COMPLETED`, `INACTIVE`, `FAILED`) |
+| `result` | bool \| null | Node's return value, once known |
+| `method` | string \| null | Name of the node method being executed |
+| `percentage` | int \| null | `0`–`100`. Auto-managed (`0` on `NODE_RUNNING`, `100` on `NODE_COMPLETED`) unless the node calls `ctx.report_progress(...)`, which emits its own `NODE_PROGRESS` event with the reported value — see [Concepts → Node Progress Feedback](concepts.md#node-progress-feedback) |
+| `source` / `target` | string \| null | Set on `LOOPBACK_TRIGGERED` events |
+| `active_predecessor_count` / `completed_predecessor_count` | int \| null | Predecessor bookkeeping for waiting nodes |
+| `timestamp` | float | Unix timestamp |
+
+`GET /run/stream` closes with one final non-`WorkflowExecutionEvent` frame instead: `{"state": "finished" | "failed" | "cancelled"}`.
+
+To render live per-node feedback (progress bar + message), group events by `node_key` — every event that carries one (`NODE_WAITING`, `NODE_RUNNING`, `NODE_PROGRESS`, `NODE_COMPLETED`, `NODE_INACTIVE`, `NODE_FAILED`) updates that node's latest `state`, `percentage`, and `message` in place. This is exactly what the bundled dashboard's Run Control page does — see [HTML UI → Live node progress](html-ui.md#live-node-progress).
+
 ## Logs
 
 | Method | Path | Description |
