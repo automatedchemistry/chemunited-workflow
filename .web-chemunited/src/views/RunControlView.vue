@@ -171,7 +171,21 @@ function openStream() {
               }
               card.nodes.push(node)
             }
-            if (iteration >= node.iteration) {
+            const advancesIteration = iteration > node.iteration
+            if (advancesIteration && data.state === 'INACTIVE') {
+              // The executor's blanket "outside reachable subgraph" sweep
+              // (_initialize_iteration in executor.py) stamps every node not
+              // reachable from a new loop iteration with an INACTIVE event
+              // at that higher iteration — including nodes upstream of the
+              // loop (or upstream of a different loop that just advanced
+              // the shared iteration counter) that already completed and
+              // will never run again. It's the only event such a node will
+              // ever get for that iteration, so accepting it would
+              // permanently clobber an already-completed row. A node that's
+              // genuinely going to run again always gets a real WAITING
+              // event for the new iteration first, so it's safe to ignore
+              // an INACTIVE-only advance here.
+            } else if (iteration >= node.iteration) {
               node.iteration = iteration
               if (data.state) node.state = data.state as NodeCard['state']
               if (data.method) node.method = data.method as string
