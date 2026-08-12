@@ -41,7 +41,7 @@ def build_draw(platform):
         heat_exchange=False,
         heat_transfer_coefficient="1000.0 watt / kelvin / meter ** 2",
         mirror=False,
-        pressure_access=True,
+        pressure_access=False,
         surface_temperature="298.15 kelvin",
         top_access=1,
     )
@@ -57,7 +57,7 @@ def build_draw(platform):
         heat_exchange=False,
         heat_transfer_coefficient="1000.0 watt / kelvin / meter ** 2",
         mirror=False,
-        pressure_access=True,
+        pressure_access=False,
         surface_temperature="298.15 kelvin",
         top_access=1,
     )
