@@ -78,14 +78,26 @@ class NodeExecutionContext:
     config: BaseModel
     node_config: NodeConfig | None
     runtime: NodeRuntime
-    _progress_callback: Callable[[int, str | None], None] | None = field(
+    _progress_callback: Callable[[int, str | None, float | None], None] | None = field(
         default=None, repr=False
     )
 
-    def report_progress(self, percentage: int, message: str | None = None) -> None:
-        """Report live progress (0-100) and an optional status message for this node."""
+    def report_progress(
+        self,
+        percentage: int,
+        message: str | None = None,
+        wait_seconds: float | None = None,
+    ) -> None:
+        """Report live progress (0-100), an optional status message, and an
+        optional wait duration (seconds) for this node.
+
+        ``wait_seconds`` is a fire-once live signal for dashboards to render
+        a countdown (e.g. before a fixed ``platform._wait(...)`` delay) — it
+        is not persisted as run history and is cleared by the next progress
+        report that omits it.
+        """
         if self._progress_callback is not None:
-            self._progress_callback(percentage, message)
+            self._progress_callback(percentage, message, wait_seconds)
 
 
 @dataclass(slots=True)
@@ -154,6 +166,7 @@ class WorkflowExecutionEvent:
     active_predecessor_count: int | None = None
     completed_predecessor_count: int | None = None
     percentage: int | None = None
+    wait_seconds: float | None = None
     timestamp: float = field(default_factory=time)
 
     def model_dump(self) -> dict:
@@ -170,6 +183,7 @@ class WorkflowExecutionEvent:
             "active_predecessor_count": self.active_predecessor_count,
             "completed_predecessor_count": self.completed_predecessor_count,
             "percentage": self.percentage,
+            "wait_seconds": self.wait_seconds,
             "timestamp": self.timestamp,
         }
 

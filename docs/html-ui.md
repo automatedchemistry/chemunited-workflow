@@ -22,6 +22,7 @@ Run Control shows one card per process step (`clean_0`, `react_1`, ...). As a ru
 - **Percentage** starts at `0%` when the node starts running and reaches `100%` on completion, even if the node never reports anything itself.
 - **Message** is a live snapshot, not a log — it always shows whatever was reported most recently, and is replaced (not appended to) on the next update.
 - A **failed** node's row turns red and keeps whatever percentage/message it last reported, instead of silently freezing mid-progress.
+- A **wait countdown** (depleting clock + remaining time, e.g. `"5:00"` counting down to `0s`) appears next to the message when a node reports `wait_seconds`, and disappears the instant that node's next event arrives — the dashboard ticks it down client-side from the reported duration and the event's timestamp; the backend only sends the value once.
 
 This comes entirely from the `node_key`-bearing events already described in [API Reference → Event schema](api-reference.md#event-schema-runstatus-and-runstream) — the dashboard doesn't poll anything extra for it. To get finer-grained bars than the automatic `0% → 100%` jump, node authors call `ctx.report_progress(percentage, message)` from inside a node method; see [Concepts → Node Progress Feedback](concepts.md#node-progress-feedback) for the authoring side.
 

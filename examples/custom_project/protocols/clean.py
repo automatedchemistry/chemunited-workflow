@@ -172,8 +172,10 @@ class CustomProcess(Process[ProcessConfig]):
     def script_1(self, ctx: NodeExecutionContext) -> bool:
         ctx.report_progress(0, "Script 1 starting.")
         time.sleep(0.4)
-        ctx.report_progress(50, "Script 1 halfway.")
-        time.sleep(0.4)
+        ctx.report_progress(
+            50, "Script 1 waiting for reaction to settle.", wait_seconds=5
+        )
+        time.sleep(5)
         ctx.report_progress(100, "Script 1 ran.")
         return True
 

@@ -20,7 +20,33 @@ const protocols = ref<ProtocolMeta[]>([])
 const streamStatus = ref<'closed' | 'opening' | 'open' | 'reconnecting'>('closed')
 const runId = ref<string | null>(store.activeRunId)
 
+// Drives the live wait-countdown display — ticks while any node has an
+// active wait_seconds, updated on a shared interval rather than one timer
+// per node.
+const nowSeconds = ref(Date.now() / 1000)
+let waitTicker: ReturnType<typeof window.setInterval> | null = null
+
 let eventSource: EventSource | null = null
+
+function remainingWaitSeconds(node: NodeCard): number {
+  if (node.waitSeconds === null || node.waitStartedAt === null) return 0
+  return Math.max(0, node.waitSeconds - (nowSeconds.value - node.waitStartedAt))
+}
+
+// Fraction of the wait still remaining (1 = just started, 0 = elapsed) —
+// drives the depleting clock's conic-gradient fill.
+function waitFraction(node: NodeCard): number {
+  if (node.waitSeconds === null || node.waitSeconds <= 0) return 0
+  return remainingWaitSeconds(node) / node.waitSeconds
+}
+
+function formatWaitTime(seconds: number): string {
+  const whole = Math.ceil(seconds)
+  if (whole < 60) return `${whole}s`
+  const minutes = Math.floor(whole / 60)
+  const secs = whole % 60
+  return `${minutes}:${secs.toString().padStart(2, '0')}`
+}
 
 const isRunning = computed(() => store.runState === 'running')
 const canStart = computed(() => Boolean(store.selectedProtocol) && !isRunning.value)
@@ -124,21 +150,46 @@ function openStream() {
             card.status = card.hasFailed ? 'failed' : 'completed'
           }
 
-          // Per-node ("script block") progress — any event carrying a node_key
-          // updates (or creates) that node's row. Message/percentage are always
-          // overwritten in place: they're a live snapshot, not a history.
+          // Per-node ("script block") progress — one row per nodeId, keyed
+          // regardless of iteration. A late/out-of-order event for a lower
+          // iteration (see 13e96b4) is ignored so it can't regress a row that
+          // has already advanced.
           const nodeKey = data.node_key as [string, number] | null
           if (nodeKey) {
             const [nodeId, iteration] = nodeKey
-            let node = card.nodes.find(n => n.nodeId === nodeId && n.iteration === iteration)
+            let node = card.nodes.find(n => n.nodeId === nodeId)
             if (!node) {
-              node = { nodeId, iteration, method: '', state: 'WAITING', percentage: 0, message: '' }
+              node = {
+                nodeId,
+                iteration,
+                method: '',
+                state: 'WAITING',
+                percentage: 0,
+                message: '',
+                waitSeconds: null,
+                waitStartedAt: null,
+              }
               card.nodes.push(node)
             }
-            if (data.state) node.state = data.state as NodeCard['state']
-            if (data.method) node.method = data.method as string
-            if (typeof data.percentage === 'number') node.percentage = data.percentage
-            if (typeof data.message === 'string') node.message = data.message
+            if (iteration >= node.iteration) {
+              node.iteration = iteration
+              if (data.state) node.state = data.state as NodeCard['state']
+              if (data.method) node.method = data.method as string
+              if (typeof data.percentage === 'number') node.percentage = data.percentage
+              if (typeof data.message === 'string') node.message = data.message
+
+              // A wait countdown is a fire-once hint: present only on the
+              // event that reports it, anchored to that event's backend
+              // timestamp. Any other event (new message, state change,
+              // completion) omits it and clears the countdown.
+              if (typeof data.wait_seconds === 'number' && data.wait_seconds > 0) {
+                node.waitSeconds = data.wait_seconds
+                node.waitStartedAt = typeof data.timestamp === 'number' ? data.timestamp : Date.now() / 1000
+              } else {
+                node.waitSeconds = null
+                node.waitStartedAt = null
+              }
+            }
           }
         }
       }
@@ -191,6 +242,7 @@ async function startRun() {
       card.status = 'waiting'
       card.hasFailed = false
       card.errorMessage = ''
+      card.nodes = []
     }
 
     store.setMessage('Run accepted. Listening for live events.', 'info')
@@ -215,6 +267,8 @@ async function cancelRun() {
 }
 
 onMounted(async () => {
+  waitTicker = window.setInterval(() => { nowSeconds.value = Date.now() / 1000 }, 250)
+
   await Promise.all([loadProtocols(), store.checkActiveRun()])
 
   if (store.runState === 'running' && store.activeRunId) {
@@ -229,7 +283,10 @@ onMounted(async () => {
   }
 })
 
-onUnmounted(() => { closeStream() })
+onUnmounted(() => {
+  closeStream()
+  if (waitTicker !== null) { window.clearInterval(waitTicker); waitTicker = null }
+})
 </script>
 
 <template>
@@ -408,17 +465,32 @@ onUnmounted(() => { closeStream() })
           <div v-if="card.nodes.length" class="node-list">
             <div
               v-for="node in card.nodes"
-              :key="`${node.nodeId}:${node.iteration}`"
+              :key="node.nodeId"
               :class="['node-row', node.state.toLowerCase()]"
             >
               <div class="node-row-header">
-                <span class="node-name">{{ node.method || node.nodeId }}</span>
+                <span class="node-name">
+                  {{ node.method || node.nodeId }}
+                  <span v-if="node.iteration > 0" class="node-iteration-badge">
+                    iteration {{ node.iteration }}
+                  </span>
+                </span>
                 <span class="node-percentage">{{ node.percentage }}%</span>
               </div>
               <div class="progress-track">
                 <div class="progress-fill" :style="{ width: node.percentage + '%' }" />
               </div>
-              <p v-if="node.message" class="node-message">{{ node.message }}</p>
+              <div v-if="node.message || remainingWaitSeconds(node) > 0" class="node-status-row">
+                <p v-if="node.message" class="node-message">{{ node.message }}</p>
+                <span v-if="remainingWaitSeconds(node) > 0" class="node-wait">
+                  <span
+                    class="node-wait-clock"
+                    :style="{ '--wait-frac': waitFraction(node) }"
+                    aria-hidden="true"
+                  />
+                  <span class="node-wait-time">{{ formatWaitTime(remainingWaitSeconds(node)) }}</span>
+                </span>
+              </div>
             </div>
           </div>
         </div>
@@ -860,6 +932,13 @@ onUnmounted(() => { closeStream() })
   color: var(--color-heading);
 }
 
+.node-iteration-badge {
+  margin-left: 0.4rem;
+  font-size: 0.68rem;
+  font-weight: 600;
+  color: var(--color-text-muted);
+}
+
 .node-percentage {
   font-size: 0.72rem;
   font-weight: 620;
@@ -890,8 +969,16 @@ onUnmounted(() => { closeStream() })
 .node-row.completed .node-percentage { color: var(--color-success); }
 .node-row.failed .node-percentage    { color: var(--color-danger); }
 
+.node-status-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-top: 0.3rem;
+}
+
 .node-message {
-  margin: 0.3rem 0 0;
+  margin: 0;
   font-size: 0.73rem;
   line-height: 1.35;
   color: var(--color-text-muted);
@@ -899,6 +986,36 @@ onUnmounted(() => { closeStream() })
 
 .node-row.failed .node-message {
   color: var(--color-danger);
+}
+
+/* ── Wait countdown ─────────────────────────────────── */
+.node-wait {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 0.3rem;
+  margin-left: auto;
+}
+
+.node-wait-clock {
+  --wait-frac: 1;
+  width: 11px;
+  height: 11px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: conic-gradient(
+    var(--color-primary) calc(var(--wait-frac) * 360deg),
+    var(--color-border) 0
+  );
+  transition: background 0.2s linear;
+}
+
+.node-wait-time {
+  font-size: 0.72rem;
+  font-weight: 620;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-primary);
+  white-space: nowrap;
 }
 
 /* ── Animations ─────────────────────────────────────── */

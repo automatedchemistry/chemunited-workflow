@@ -10,6 +10,8 @@ export interface NodeCard {
   state: 'WAITING' | 'RUNNING' | 'COMPLETED' | 'INACTIVE' | 'FAILED'
   percentage: number
   message: string
+  waitSeconds: number | null
+  waitStartedAt: number | null
 }
 
 export interface ProcessCard {

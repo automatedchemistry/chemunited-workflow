@@ -84,6 +84,7 @@ Both `GET /run/status` (`events` array) and `GET /run/stream` (one SSE `data:` f
 | `percentage` | int \| null | `0`–`100`. Auto-managed (`0` on `NODE_RUNNING`, `100` on `NODE_COMPLETED`) unless the node calls `ctx.report_progress(...)`, which emits its own `NODE_PROGRESS` event with the reported value — see [Concepts → Node Progress Feedback](concepts.md#node-progress-feedback) |
 | `source` / `target` | string \| null | Set on `LOOPBACK_TRIGGERED` events |
 | `active_predecessor_count` / `completed_predecessor_count` | int \| null | Predecessor bookkeeping for waiting nodes |
+| `wait_seconds` | float \| null | Set only when the node calls `ctx.report_progress(percentage, message, wait_seconds=N)`; a fire-once hint (not persisted run history) for clients to render a live countdown anchored to `timestamp`. `null` on every other event, which signals the countdown should be cleared |
 | `timestamp` | float | Unix timestamp |
 
 `GET /run/stream` closes with one final non-`WorkflowExecutionEvent` frame instead: `{"state": "finished" | "failed" | "cancelled"}`.

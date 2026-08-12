@@ -237,12 +237,16 @@ class CustomProcess(Process[ProcessConfig]):
     def script_1(self, ctx: NodeExecutionContext) -> bool:
         ctx.report_progress(0, "Infusing AS pump: 10 ml at 50 ml/min.")
         self.platform["AS pump"].put("infuse", volume="10 ml", rate="50 ml/min")
+        ctx.report_progress(50, "Infused. Waiting for line to settle.", wait_seconds=4)
+        self.platform._wait(4)
         ctx.report_progress(100, "Script 1 ran.")
         return True
 
     def script_2(self, ctx: NodeExecutionContext) -> bool:
         ctx.report_progress(0, "Infusing Quencher pump: 5 ml at 15 ml/min.")
         self.platform["Quencher pump"].put("infuse", volume="5 ml", rate="15 ml/min")
+        ctx.report_progress(50, "Infused. Waiting for line to settle.", wait_seconds=3)
+        self.platform._wait(3)
         ctx.report_progress(100, "Script 2 ran.")
         return True
 
@@ -275,6 +279,10 @@ class CustomProcess(Process[ProcessConfig]):
         ctx.report_progress(75, "Loop primed. Withdrawing sample.")
         self.platform["AS pump"].put("withdraw", volume="10 ml", rate="50 ml/min")
         self.platform["AS injection"].put("position", connect="[[5, 6]]")
+        ctx.report_progress(
+            90, "Sample withdrawn. Waiting for pressure to equalize.", wait_seconds=8
+        )
+        self.platform._wait(8)
         ctx.report_progress(100, "Script 5 ran.")
         return True
 
@@ -286,6 +294,8 @@ class CustomProcess(Process[ProcessConfig]):
         self.platform["Quencher valve"].put("position", connect="[[0, 3]]")
         self.platform["Quencher pump"].put("withdraw", volume="5 ml", rate="25 ml/min")
         self.platform["Quencher valve"].put("position", connect="[[0, 5]]")
+        ctx.report_progress(80, "Dosed. Waiting for mixing.", wait_seconds=6)
+        self.platform._wait(6)
         ctx.report_progress(100, "Script 6 ran.")
         return True
 
@@ -296,5 +306,7 @@ class CustomProcess(Process[ProcessConfig]):
         ctx.report_progress(65, "Withdrawn. Restoring valve, powering relay.")
         self.platform["Reagent Valve"].put("position", connect="[[0, 5]]")
         self.platform["Relay"].put("power-on", channel="1")
+        ctx.report_progress(85, "Relay powered. Waiting for warm-up.", wait_seconds=10)
+        self.platform._wait(10)
         ctx.report_progress(100, "Script 7 ran.")
         return True
