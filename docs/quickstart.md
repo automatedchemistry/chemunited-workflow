@@ -36,7 +36,7 @@ class MyWorkflow(Process[MyConfig]):
         return client.get("status")["ready"]
 ```
 
-Any node method can push live progress back to the dashboard while it's still running, via `ctx.report_progress(percentage, message)` — see [Concepts → Node Progress Feedback](concepts.md#node-progress-feedback).
+Any node method can push live progress back to the dashboard while it's still running, via `ctx.report_progress(percentage, message)` — see [Concepts → Node Progress Feedback](concepts.md#node-progress-feedback). A node can also pause and wait for an operator to reply on the dashboard before continuing, via `ctx.request_operator_input(message, timeout_seconds)` — see [Concepts → Human-in-the-Loop Input](concepts.md#human-in-the-loop-input).
 
 ### 2. Configure device connectivity
 

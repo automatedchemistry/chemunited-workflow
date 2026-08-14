@@ -7,8 +7,12 @@ import time
 
 import pytest
 
-from chemunited_workflow.cancellation import sleep_interruptibly, wait_while_paused
-from chemunited_workflow.exceptions import RunCancelledError
+from chemunited_workflow.cancellation import (
+    sleep_interruptibly,
+    wait_for_operator_input,
+    wait_while_paused,
+)
+from chemunited_workflow.exceptions import OperatorInputTimeoutError, RunCancelledError
 
 
 # ── wait_while_paused ────────────────────────────────────────────────────────
@@ -97,3 +101,50 @@ def test_sleep_interruptibly_unaffected_when_not_paused():
     sleep_interruptibly(0.05, None, pause_event)
     elapsed = time.monotonic() - started
     assert 0.05 <= elapsed < 0.3
+
+
+# ── wait_for_operator_input ──────────────────────────────────────────────────
+
+
+def test_wait_for_operator_input_returns_once_event_set():
+    event = threading.Event()
+    timer = threading.Timer(0.05, event.set)
+    started = time.monotonic()
+    timer.start()
+    try:
+        wait_for_operator_input(event, None, timeout_seconds=5.0)
+    finally:
+        timer.cancel()
+    assert time.monotonic() - started >= 0.05
+
+
+def test_wait_for_operator_input_raises_timeout_when_no_reply():
+    event = threading.Event()
+    with pytest.raises(OperatorInputTimeoutError):
+        wait_for_operator_input(event, None, timeout_seconds=0.05)
+
+
+def test_wait_for_operator_input_raises_cancelled_over_timeout():
+    event = threading.Event()
+    cancel_event = threading.Event()
+    timer = threading.Timer(0.03, cancel_event.set)
+    started = time.monotonic()
+    timer.start()
+    try:
+        with pytest.raises(RunCancelledError):
+            wait_for_operator_input(event, cancel_event, timeout_seconds=5.0)
+    finally:
+        timer.cancel()
+    assert time.monotonic() - started < 1.0
+
+
+def test_wait_for_operator_input_cancellation_wins_even_if_event_also_set():
+    # RunStore.cancel() wakes any pending-input Event as well as cancel_event
+    # so a blocked wait doesn't sit out its timeout — but a reply that never
+    # really arrived must not be mistaken for a genuine one.
+    event = threading.Event()
+    cancel_event = threading.Event()
+    event.set()
+    cancel_event.set()
+    with pytest.raises(RunCancelledError):
+        wait_for_operator_input(event, cancel_event, timeout_seconds=5.0)

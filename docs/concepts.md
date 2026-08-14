@@ -31,6 +31,25 @@ def dose_reagent(self, ctx: NodeExecutionContext) -> bool:
 - **Where it surfaces** — `NodeRuntime.status_message` / `status_percentage` are included in `WorkflowResult.model_dump()` (`node_runtime` map) for post-run inspection, and every `NODE_PROGRESS` event carries `node_key`, `percentage`, and `message` over `/run/stream` (SSE) and `/run/status` (polling) — see [API Reference](api-reference.md#run-control). The bundled dashboard renders one row per node under its process card, with a live progress bar and label — see [HTML UI](html-ui.md#live-node-progress).
 - Assigning `ctx.runtime.status_message` directly (an older convention still visible in some example protocols) has **no visible effect**: the executor overwrites `status_message` itself at every lifecycle transition (`"Running method '...'."`, `"Node completed with result ...."`), so a manual mid-method assignment is always clobbered before anything reads it. Use `report_progress` for any message you want to actually reach the dashboard or event stream.
 
+## Human-in-the-Loop Input
+
+A node can pause and wait for an operator to answer a prompt on the dashboard, then resume using their reply:
+
+```python
+def confirm_setup(self, ctx: NodeExecutionContext) -> bool:
+    reply = ctx.request_operator_input(
+        "Confirm reagent loaded (yes/no).", timeout_seconds=300
+    )
+    return reply.strip().lower() == "yes"
+```
+
+- **`ctx.request_operator_input(message, timeout_seconds)`** blocks the calling node's worker thread — other nodes keep running — and shows `message` on the dashboard as a prompt tied to that node's row (see [HTML UI → Operator input prompts](html-ui.md#operator-input-prompts)). It returns whatever the operator typed, as a string.
+- **`timeout_seconds` is required, with no default** — there's no call shape that waits forever. If nobody replies in time, the wait raises `OperatorInputTimeoutError`, which propagates like any other node exception: the node is marked `FAILED` and its successors become `INACTIVE` (respecting `error_resilient`, same as any other error — see [API Reference → Run control](api-reference.md#run-control)).
+- **Cancelling the run** while a node is waiting raises `RunCancelledError` in that node, same as cancelling anywhere else.
+- **Scoped per node** — concurrent branches can each be waiting on their own prompt independently; replying to one doesn't affect the others.
+- **Not persisted across a server restart** — like the rest of run state, a pending prompt lives only in memory. A dashboard client that reconnects mid-wait (without a restart) still recovers the open prompt, via `GET /run/active`'s `pending_inputs` field.
+- Requires a run driven by the dashboard/API — calling it outside that context (e.g. a bare `WorkflowExecutor.execute(...)` with no `request_input` wired) raises `RuntimeError` immediately.
+
 ## Physical Units
 
 Use `ChemUnitQuantity` from `chemunited-quantities` for values that carry SI units:

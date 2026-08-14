@@ -7,7 +7,7 @@ When the FastAPI server is running, open `http://127.0.0.1:3116/` to access the 
 | Page | URL | Description |
 |------|-----|-------------|
 | Dashboard | `/` | Active run status, protocol/process counts, platform device map, quick links |
-| Run Control | `/run-control` | Start/cancel runs, live event feed via SSE, per-node progress bars |
+| Run Control | `/run-control` | Start/pause/resume/cancel runs, live event feed via SSE, per-node progress bars |
 | Protocols | `/protocols` | List and manage saved protocol files |
 | Monitoring | `/monitoring` | Live sensor monitoring sessions and time-series profiles |
 | Devices | `/devices` | Component connectivity map and ping check |
@@ -27,6 +27,12 @@ Run Control shows one card per process step (`clean_0`, `react_1`, ...). As a ru
 This comes entirely from the `node_key`-bearing events already described in [API Reference → Event schema](api-reference.md#event-schema-runstatus-and-runstream) — the dashboard doesn't poll anything extra for it. To get finer-grained bars than the automatic `0% → 100%` jump, node authors call `ctx.report_progress(percentage, message)` from inside a node method; see [Concepts → Node Progress Feedback](concepts.md#node-progress-feedback) for the authoring side.
 
 If you build a custom dashboard (per-project override or fully independent), the same data is available from `GET /run/stream` or `GET /run/status` — group events by `node_key` the same way `RunControlView.vue` does (`.web-chemunited/src/views/RunControlView.vue`, `stores/runStatus.ts`).
+
+## Operator input prompts
+
+When a node calls `ctx.request_operator_input(message, timeout_seconds)` (see [Concepts → Human-in-the-Loop Input](concepts.md#human-in-the-loop-input)), that node's row on Run Control grows a small reply form — the prompt message, a text box, and a Reply button — in the same spot the progress bar and wait countdown live. Submitting it posts to `POST /run/input`; the run resumes once the reply is delivered, and the form disappears.
+
+Reconnecting mid-wait (e.g. navigating back to Run Control after the live `NODE_INPUT_REQUESTED` event already streamed) still recovers the open prompt — `GET /run/active`'s `pending_inputs` field is read on mount and used to redraw it. This doesn't survive a full server restart: like the rest of run state, a pending prompt lives only in memory.
 
 ## Per-project override
 

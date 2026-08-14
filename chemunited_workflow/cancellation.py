@@ -5,7 +5,7 @@ from __future__ import annotations
 import threading
 import time
 
-from .exceptions import RunCancelledError
+from .exceptions import OperatorInputTimeoutError, RunCancelledError
 
 
 def raise_if_cancelled(cancellation_token: threading.Event | None) -> None:
@@ -57,3 +57,30 @@ def sleep_interruptibly(
             raise RunCancelledError("Run was cancelled.")
         elif cancellation_token is None:
             time.sleep(timeout)
+
+
+def wait_for_operator_input(
+    event: threading.Event,
+    cancellation_token: threading.Event | None,
+    timeout_seconds: float,
+) -> None:
+    """Block cooperatively until ``event`` is set, the run is cancelled, or ``timeout_seconds`` elapses.
+
+    Raises ``RunCancelledError`` if the run is cancelled while waiting, or
+    ``OperatorInputTimeoutError`` if no reply arrives before the deadline.
+
+    A cancellation also wakes ``event`` (see ``RunStore.cancel``) so a blocked
+    wait doesn't sit out the rest of its timeout — the cancellation check runs
+    first on every loop pass so that wake-up is never mistaken for a real reply.
+    """
+    deadline = time.monotonic() + timeout_seconds
+    while True:
+        raise_if_cancelled(cancellation_token)
+        if event.is_set():
+            return
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise OperatorInputTimeoutError(
+                f"No operator reply received within {timeout_seconds} second(s)."
+            )
+        event.wait(timeout=min(remaining, 0.1))

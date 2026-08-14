@@ -81,6 +81,13 @@ class RunStatus(BaseModel):
     events: list[dict[str, Any]]
 
 
+class RunInputIn(BaseModel):
+    """Request body for POST /run/input — an operator's reply to a pending node prompt."""
+
+    node_id: str
+    value: str
+
+
 class LogMeta(BaseModel):
     filename: str
     modified: str

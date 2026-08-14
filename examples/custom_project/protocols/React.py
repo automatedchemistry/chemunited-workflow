@@ -261,6 +261,11 @@ class CustomProcess(Process[ProcessConfig]):
         self.platform["Disposal valve"].put("position", connect="[[1, 2]]")
         ctx.report_progress(50, "Setting Relay channels.")
         self.platform["Relay"].put("multiple_channel", values="02000000")
+        reply = ctx.request_operator_input(
+            "Confirm the reaction mixture looks correct before continuing (yes/no).",
+            timeout_seconds=120,
+        )
+        ctx.report_progress(75, f"Operator replied {reply!r}. Continuing.")
         ctx.report_progress(100, "Script 4 ran.")
         return True
 

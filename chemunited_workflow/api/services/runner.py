@@ -11,7 +11,7 @@ from loguru import logger
 from pydantic import BaseModel
 
 from chemunited_workflow import Process, WorkflowExecutor, compile_workflow
-from chemunited_workflow.cancellation import wait_while_paused
+from chemunited_workflow.cancellation import wait_for_operator_input, wait_while_paused
 from chemunited_workflow.durations import parse_timeout_commands
 from chemunited_workflow.platform import Platform
 from chemunited_workflow.terminal import WorkflowLogger, create_run_log_path
@@ -98,6 +98,18 @@ class RunnerService:
                     f.unlink(missing_ok=True)
             cancellation_token = self._run_store.cancel_event()
             pause_event = self._run_store.pause_event()
+
+            def request_input(
+                node_id: str, message: str, timeout_seconds: float
+            ) -> str:
+                event = self._run_store.request_input(node_id, message)
+                try:
+                    wait_for_operator_input(event, cancellation_token, timeout_seconds)
+                except Exception:
+                    self._run_store.pop_input_value(node_id)
+                    raise
+                return self._run_store.pop_input_value(node_id) or ""
+
             platform = Platform.from_project_dir(
                 self._project_dir,
                 dry_run=dry_run,
@@ -137,6 +149,7 @@ class RunnerService:
                         if cancellation_token is not None
                         else None
                     ),
+                    request_input=request_input,
                 )
                 result = executor.execute(process, start_node="start")
                 self._run_store.append_result(result)

@@ -34,7 +34,9 @@ When running with `--with-mcp` (MCP streamable-HTTP endpoint embedded in the Fas
 | `get_active_run` | Return the active run ID without consuming queued execution events. |
 | `get_run_status` | Poll run state and events (clears the event queue on each call). |
 | `get_run_report` | Full per-step execution report for the current or last completed run. |
-| `cancel_run` | Cancel the active run (cooperative — stops at the next step checkpoint). |
+| `cancel_run` | Cancel the active run (cooperative — stops at the next step checkpoint). Works whether the run is `running` or `paused`. |
+| `pause_run` | Pause the active run (cooperative — holds at the next checkpoint, which may be mid-node between device calls). Hardware is left as-is. Only valid while `running`. |
+| `resume_run` | Resume a paused run from exactly where it held. Only valid while `paused`. |
 | `drain_run_pool` | Return all pending device commands from `log/pool/` and delete their files. |
 
 ## Components

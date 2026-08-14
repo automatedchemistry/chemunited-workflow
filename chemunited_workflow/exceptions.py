@@ -9,6 +9,10 @@ class RunCancelledError(RuntimeError):
     """Raised internally when a workflow run is cancelled cooperatively."""
 
 
+class OperatorInputTimeoutError(RuntimeError):
+    """Raised when a request_operator_input() call gets no reply within its timeout."""
+
+
 class DeviceCommunicationError(RuntimeError):
     """Base for transport-level device communication failures across all client protocols."""
 

@@ -81,6 +81,9 @@ class NodeExecutionContext:
     _progress_callback: Callable[[int, str | None, float | None], None] | None = field(
         default=None, repr=False
     )
+    _input_callback: Callable[[str, float], str] | None = field(
+        default=None, repr=False
+    )
 
     def report_progress(
         self,
@@ -98,6 +101,21 @@ class NodeExecutionContext:
         """
         if self._progress_callback is not None:
             self._progress_callback(percentage, message, wait_seconds)
+
+    def request_operator_input(self, message: str, timeout_seconds: float) -> str:
+        """Show ``message`` on the dashboard and block until an operator replies.
+
+        Raises ``OperatorInputTimeoutError`` if no reply arrives within
+        ``timeout_seconds``, or ``RunCancelledError`` if the run is cancelled
+        while waiting. Blocks only this node's worker thread — other nodes
+        keep running.
+        """
+        if self._input_callback is None:
+            raise RuntimeError(
+                "request_operator_input() requires a run driven by the dashboard/API "
+                "(no input callback is wired for this execution context)."
+            )
+        return self._input_callback(message, timeout_seconds)
 
 
 @dataclass(slots=True)
@@ -167,6 +185,7 @@ class WorkflowExecutionEvent:
     completed_predecessor_count: int | None = None
     percentage: int | None = None
     wait_seconds: float | None = None
+    input_value: str | None = None
     timestamp: float = field(default_factory=time)
 
     def model_dump(self) -> dict:
@@ -184,6 +203,7 @@ class WorkflowExecutionEvent:
             "completed_predecessor_count": self.completed_predecessor_count,
             "percentage": self.percentage,
             "wait_seconds": self.wait_seconds,
+            "input_value": self.input_value,
             "timestamp": self.timestamp,
         }
 

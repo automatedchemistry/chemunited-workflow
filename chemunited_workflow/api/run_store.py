@@ -33,6 +33,9 @@ class RunRecord:
     pause_event: threading.Event = field(default_factory=threading.Event)
     events: list[WorkflowExecutionEvent] = field(default_factory=list)
     results: list[WorkflowResult] = field(default_factory=list)
+    pending_inputs: dict[str, threading.Event] = field(default_factory=dict)
+    pending_input_messages: dict[str, str] = field(default_factory=dict)
+    input_values: dict[str, str] = field(default_factory=dict)
 
 
 class RunStore:
@@ -154,6 +157,40 @@ class RunStore:
                 return None
             return self._record.pause_event
 
+    def request_input(self, node_id: str, message: str) -> threading.Event:
+        """Register a pending operator-input request for ``node_id`` and return its Event."""
+        with self._lock:
+            event = threading.Event()
+            if self._record is not None:
+                self._record.pending_inputs[node_id] = event
+                self._record.pending_input_messages[node_id] = message
+            return event
+
+    def submit_input(self, node_id: str, value: str) -> bool:
+        """Deliver an operator's reply for ``node_id``. Returns False if nothing is pending for it."""
+        with self._lock:
+            if self._record is None or node_id not in self._record.pending_inputs:
+                return False
+            self._record.input_values[node_id] = value
+            self._record.pending_inputs[node_id].set()
+            return True
+
+    def pop_input_value(self, node_id: str) -> str | None:
+        """Clear and return the delivered reply for ``node_id``, if any."""
+        with self._lock:
+            if self._record is None:
+                return None
+            self._record.pending_inputs.pop(node_id, None)
+            self._record.pending_input_messages.pop(node_id, None)
+            return self._record.input_values.pop(node_id, None)
+
+    def pending_input_prompts(self) -> dict[str, str]:
+        """Return ``{node_id: message}`` for every request awaiting an operator reply."""
+        with self._lock:
+            if self._record is None:
+                return {}
+            return dict(self._record.pending_input_messages)
+
     def cancel(self) -> bool:
         with self._lock:
             if self._record is None or self._record.state not in _ACTIVE_STATES:
@@ -162,6 +199,9 @@ class RunStore:
             self._record.cancel_event.set()
             # Wake anything blocked in a pause checkpoint so it observes cancellation.
             self._record.pause_event.clear()
+            # Wake anything blocked waiting on an operator reply, same reason.
+            for event in self._record.pending_inputs.values():
+                event.set()
         self._delete_lockfile()
         return True
 

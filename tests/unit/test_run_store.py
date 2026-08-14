@@ -265,3 +265,60 @@ def test_set_project_dir_restores_lockfile(tmp_path):
     assert store.active_run_id is None
     store.set_project_dir(tmp_path)
     assert store.active_run_id == "stale_run"
+
+
+# ── pending operator input ───────────────────────────────────────────────────
+
+
+def test_request_input_registers_prompt_and_returns_unset_event():
+    store = RunStore()
+    store.try_start("p_2026-01-01T00-00-00.json")
+    event = store.request_input("dispense", "Confirm reagent loaded")
+    assert not event.is_set()
+    assert store.pending_input_prompts() == {"dispense": "Confirm reagent loaded"}
+
+
+def test_submit_input_sets_event_and_value_then_pop_clears_it():
+    store = RunStore()
+    store.try_start("p_2026-01-01T00-00-00.json")
+    event = store.request_input("dispense", "Confirm reagent loaded")
+
+    assert store.submit_input("dispense", "yes") is True
+    assert event.is_set()
+    assert store.pop_input_value("dispense") == "yes"
+    # cleared after popping
+    assert store.pending_input_prompts() == {}
+    assert store.pop_input_value("dispense") is None
+
+
+def test_submit_input_returns_false_when_nothing_pending():
+    store = RunStore()
+    store.try_start("p_2026-01-01T00-00-00.json")
+    assert store.submit_input("no_such_node", "yes") is False
+
+
+def test_pending_inputs_are_scoped_per_node():
+    store = RunStore()
+    store.try_start("p_2026-01-01T00-00-00.json")
+    event_a = store.request_input("node_a", "A?")
+    event_b = store.request_input("node_b", "B?")
+
+    store.submit_input("node_a", "reply-a")
+
+    assert event_a.is_set()
+    assert not event_b.is_set()
+    assert store.pop_input_value("node_a") == "reply-a"
+    assert store.pending_input_prompts() == {"node_b": "B?"}
+
+
+def test_cancel_wakes_pending_input_events():
+    store = RunStore()
+    store.try_start("p_2026-01-01T00-00-00.json")
+    event = store.request_input("dispense", "Confirm reagent loaded")
+
+    store.cancel()
+
+    assert event.is_set()
+    # No reply was actually delivered — the caller must observe cancellation
+    # via cancel_event, not treat this wake-up as a real answer.
+    assert store.pop_input_value("dispense") is None

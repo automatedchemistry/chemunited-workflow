@@ -12,6 +12,8 @@ export interface NodeCard {
   message: string
   waitSeconds: number | null
   waitStartedAt: number | null
+  awaitingInput: boolean
+  inputPrompt: string
 }
 
 export interface ProcessCard {
@@ -27,6 +29,7 @@ export interface ProcessCard {
 interface ActiveRunResponse {
   active_run_id: string | null
   state: string | null
+  pending_inputs?: Record<string, string>
 }
 
 interface RunReport {
@@ -42,6 +45,7 @@ export const useRunStatusStore = defineStore('runStatus', () => {
   // --- Global run state (shared with nav badge) ---
   const activeRunId = ref<string | null>(null)
   const runState = ref<RunState>('idle')
+  const pendingInputs = ref<Record<string, string>>({})
 
   // --- Run control view state (persisted across navigation) ---
   const selectedProtocol = ref('')
@@ -60,6 +64,7 @@ export const useRunStatusStore = defineStore('runStatus', () => {
         if (data.active_run_id) {
           activeRunId.value = data.active_run_id
           runState.value = data.state === 'paused' ? 'paused' : 'running'
+          pendingInputs.value = data.pending_inputs ?? {}
           return
         }
       }
@@ -108,6 +113,7 @@ export const useRunStatusStore = defineStore('runStatus', () => {
     // global
     activeRunId,
     runState,
+    pendingInputs,
     checkActiveRun,
     setRunState,
     // view state

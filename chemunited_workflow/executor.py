@@ -57,6 +57,7 @@ class WorkflowExecutor:
         error_resilient: bool = False,
         process_key: str | None = None,
         cancellation_check: Callable[[], bool] | None = None,
+        request_input: Callable[[str, str, float], str] | None = None,
     ) -> None:
         self._compiled = compiled_workflow
         self._max_workers = max_workers
@@ -66,6 +67,7 @@ class WorkflowExecutor:
         self._error_resilient = error_resilient
         self._process_key = process_key
         self._cancellation_check = cancellation_check
+        self._request_input = request_input
 
         self._state = WorkflowExecutorState()
         self._loopbacks_by_trigger: dict[tuple[str, bool], LoopBackSpec] = {}
@@ -333,6 +335,9 @@ class WorkflowExecutor:
         ) -> None:
             self._handle_node_progress(node_key, percentage, message, wait_seconds)
 
+        def _request_operator_input(message: str, timeout_seconds: float) -> str:
+            return self._handle_node_input_request(node_key, message, timeout_seconds)
+
         ctx = NodeExecutionContext(
             node_id=node_id,
             iteration=iteration,
@@ -341,6 +346,7 @@ class WorkflowExecutor:
             node_config=node_config,
             runtime=runtime,
             _progress_callback=_report_progress,
+            _input_callback=_request_operator_input,
         )
 
         _pop_thread_resilient_errors()  # clear stale errors from thread pool reuse
@@ -592,6 +598,37 @@ class WorkflowExecutor:
             wait_seconds=wait_seconds,
         )
 
+    def _handle_node_input_request(
+        self, node_key: NodeKey, message: str, timeout_seconds: float
+    ) -> str:
+        if self._request_input is None:
+            raise RuntimeError(
+                "request_operator_input() requires a run driven by the dashboard/API "
+                "(no request_input callable was passed to WorkflowExecutor)."
+            )
+
+        node_id, _ = node_key
+        method = self._compiled.exec_graph.nodes[node_id].get("method")
+        self._emit_event(
+            event_type=WorkflowEventType.NODE_INPUT_REQUESTED,
+            message=message,
+            node_key=node_key,
+            state=NodeState.RUNNING,
+            method=method,
+        )
+
+        value = self._request_input(node_id, message, timeout_seconds)
+
+        self._emit_event(
+            event_type=WorkflowEventType.NODE_INPUT_RECEIVED,
+            message=message,
+            node_key=node_key,
+            state=NodeState.RUNNING,
+            method=method,
+            input_value=value,
+        )
+        return value
+
     def _emit_event(
         self,
         *,
@@ -605,6 +642,7 @@ class WorkflowExecutor:
         target: str | None = None,
         percentage: int | None = None,
         wait_seconds: float | None = None,
+        input_value: str | None = None,
     ) -> None:
         event = WorkflowExecutionEvent(
             event_type=event_type,
@@ -628,6 +666,7 @@ class WorkflowExecutor:
             ),
             wait_seconds=wait_seconds,
             percentage=percentage,
+            input_value=input_value,
         )
 
         for listener in self._event_listeners:

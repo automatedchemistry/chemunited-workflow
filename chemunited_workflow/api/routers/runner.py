@@ -13,7 +13,7 @@ from fastapi.responses import StreamingResponse
 from ..dependencies import get_project_holder, get_runner_service
 from ..project_holder import ProjectHolder
 from ..run_store import RunState
-from ..schemas import RunRequest, RunStatus
+from ..schemas import RunInputIn, RunRequest, RunStatus
 from ..services.runner import RunnerService
 
 router = APIRouter(prefix="/run", tags=["run"])
@@ -29,13 +29,18 @@ async def get_active_run(
 
     `state` is `"running"` or `"paused"` while active, `null` if no run is
     active — lets a reconnecting client tell a paused run apart from a
-    running one without popping events off `/status`.
+    running one without popping events off `/status`. `pending_inputs` maps
+    `node_id -> prompt message` for every node currently blocked on
+    `request_operator_input()` — a client that reconnects after the
+    `NODE_INPUT_REQUESTED` event already streamed can use this to redraw the
+    prompt instead of leaving the run silently stalled.
     """
     run_id = holder.active_run_id()
     rec = holder.run_store.get() if run_id is not None else None
     return {
         "active_run_id": run_id,
         "state": rec.state.value if rec is not None else None,
+        "pending_inputs": holder.run_store.pending_input_prompts(),
     }
 
 
@@ -260,4 +265,24 @@ async def resume_run(svc: RunnerService = Depends(get_runner_service)):
         raise HTTPException(
             status_code=409,
             detail=f"Run is '{rec.state.value}', not 'paused' — cannot resume.",
+        )
+
+
+@router.post("/input", status_code=204)
+async def submit_run_input(
+    body: RunInputIn,
+    svc: RunnerService = Depends(get_runner_service),
+):
+    """Answer a pending `request_operator_input()` prompt.
+
+    `node_id` must match a node currently blocked waiting for a reply (see
+    `pending_inputs` on `GET /run/active`, or the `NODE_INPUT_REQUESTED`
+    event on `/stream`). Returns 404 if that node isn't currently waiting —
+    either it never asked, already got an answer, timed out, or the run
+    ended.
+    """
+    if not svc._run_store.submit_input(body.node_id, body.value):
+        raise HTTPException(
+            status_code=404,
+            detail=f"Node {body.node_id!r} is not currently waiting for operator input.",
         )

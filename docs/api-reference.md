@@ -42,10 +42,14 @@ Only one run can be active at a time (the physical platform enforces this constr
 | Method | Path | Description |
 |--------|------|-------------|
 | `POST` | `/run/` | Start a workflow run from a protocol file. Body: `{"protocol": "<filename>", "dry_run": false}`. `protocol` is required; `dry_run` defaults to `false`. Returns HTTP `202` with a derived `run_id`, or `409` if a run is already active. |
-| `GET` | `/run/status` | Poll the current run state and events. Events are cleared after each read; terminal states are `finished`, `failed`, and `cancelled`. Returns `404` if no run has been recorded. |
-| `GET` | `/run/report` | Full execution report for the current or last run. Returns `202` if the run has not finished yet. |
-| `DELETE` | `/run/` | Cancel the active run. Sends a cooperative cancellation signal — the current in-flight device call completes, then execution stops at the next step checkpoint. Returns `404` if no run is active. |
-| `GET` | `/run/stream` | Stream workflow events as Server-Sent Events (SSE). Closes with a terminal-state frame when the run ends. |
+| `GET` | `/run/active` | Return `{"active_run_id": ..., "state": ..., "pending_inputs": {...}}` without consuming queued events. `state` is `"running"` or `"paused"` while active, `null` if no run is active. `pending_inputs` maps `node_id -> prompt message` for every node currently blocked on `request_operator_input()` — lets a reconnecting dashboard client redraw an open prompt it missed on the live stream. |
+| `GET` | `/run/status` | Poll the current run state and events. Events are cleared after each read; states are `running`, `paused`, and the terminal `finished`, `failed`, `cancelled`. Returns `404` if no run has been recorded. |
+| `GET` | `/run/report` | Full execution report for the current or last run. Returns `202` if the run has not finished yet (including while paused). |
+| `DELETE` | `/run/` | Cancel the active run. Sends a cooperative cancellation signal — the current in-flight device call completes, then execution stops at the next step checkpoint. Works from either `running` or `paused`. Also wakes any node currently blocked on `request_operator_input()`. Returns `404` if no run is active. |
+| `POST` | `/run/pause` | Pause the active run. Sends a cooperative pause signal — execution holds at the next checkpoint, which may be between individual device calls inside a node, not just between nodes. The physical hardware is left in whatever state it reached; nothing is moved to a "safe" position. Only valid from `running`. Returns `404` if no run is active, `409` if not currently running. |
+| `POST` | `/run/resume` | Resume a paused run, continuing execution from exactly where it held. Only valid from `paused`. Returns `404` if no run is active, `409` if not currently paused. |
+| `POST` | `/run/input` | Answer a pending `request_operator_input()` prompt. Body: `{"node_id": "...", "value": "..."}`. Returns `204`, or `404` if that node isn't currently waiting for a reply — either it never asked, already got an answer, timed out, or the run ended. |
+| `GET` | `/run/stream` | Stream workflow events as Server-Sent Events (SSE). Pushes a `{"state": "paused"\|"running"}` frame on pause/resume without closing the connection, then closes with a terminal-state frame when the run ends. |
 | `GET` | `/run/pool` | Drain pending device commands and delete their pool files; returns an empty list when no commands are pending. |
 
 The derived `run_id` has the format `{protocol_stem}_{YYYY-MM-DDTHH-MM-SS}` and is returned in the `POST /run/` response. It is human-readable and tied to the protocol name and start time.
@@ -68,13 +72,15 @@ default `"10 s"`, or pass `""` to poll without a timeout.
 
 Set `error_resilient: true` to allow client-side errors (HTTP failures, timeouts) to be logged without stopping the entire run. Each node's commands still run to completion; the node is marked `FAILED` and its successors become `INACTIVE`, but independent branches continue normally. Defaults to `false`.
 
+When a node calls `ctx.request_operator_input(message, timeout_seconds)`, the executor emits `NODE_INPUT_REQUESTED` (`message` is the prompt) and that node's worker thread blocks — other nodes keep running. Reply with `POST /run/input` using the same `node_id`; the executor then emits `NODE_INPUT_RECEIVED` (`input_value` is the reply) and the node resumes with that value. If nobody replies before `timeout_seconds` elapses, the node fails instead of waiting forever. See [Concepts → Human-in-the-Loop Input](concepts.md#human-in-the-loop-input).
+
 ### Event schema (`/run/status` and `/run/stream`)
 
 Both `GET /run/status` (`events` array) and `GET /run/stream` (one SSE `data:` frame per event) carry the same `WorkflowExecutionEvent` JSON shape:
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `event_type` | string | One of `EXECUTION_STARTED`, `ITERATION_STARTED`, `NODE_WAITING`, `NODE_RUNNING`, `NODE_PROGRESS`, `NODE_COMPLETED`, `NODE_INACTIVE`, `NODE_FAILED`, `LOOPBACK_TRIGGERED`, `EXECUTION_FINISHED` |
+| `event_type` | string | One of `EXECUTION_STARTED`, `ITERATION_STARTED`, `NODE_WAITING`, `NODE_RUNNING`, `NODE_PROGRESS`, `NODE_INPUT_REQUESTED`, `NODE_INPUT_RECEIVED`, `NODE_COMPLETED`, `NODE_INACTIVE`, `NODE_FAILED`, `LOOPBACK_TRIGGERED`, `EXECUTION_FINISHED` |
 | `message` | string | Human-readable status for this event |
 | `process` | string \| null | The process step key, e.g. `"clean_0"` |
 | `node_key` | `[node_id, iteration]` \| null | Identifies the node; `null` for process-level events (`EXECUTION_STARTED`/`EXECUTION_FINISHED`) |
@@ -85,11 +91,12 @@ Both `GET /run/status` (`events` array) and `GET /run/stream` (one SSE `data:` f
 | `source` / `target` | string \| null | Set on `LOOPBACK_TRIGGERED` events |
 | `active_predecessor_count` / `completed_predecessor_count` | int \| null | Predecessor bookkeeping for waiting nodes |
 | `wait_seconds` | float \| null | Set only when the node calls `ctx.report_progress(percentage, message, wait_seconds=N)`; a fire-once hint (not persisted run history) for clients to render a live countdown anchored to `timestamp`. `null` on every other event, which signals the countdown should be cleared |
+| `input_value` | string \| null | Set only on `NODE_INPUT_RECEIVED` — the operator's reply delivered via `POST /run/input`. `null` on every other event, including `NODE_INPUT_REQUESTED` (the prompt text itself is carried in `message`) |
 | `timestamp` | float | Unix timestamp |
 
-`GET /run/stream` closes with one final non-`WorkflowExecutionEvent` frame instead: `{"state": "finished" | "failed" | "cancelled"}`.
+`GET /run/stream` also emits non-`WorkflowExecutionEvent` `{"state": ...}` frames: a mid-stream `{"state": "paused"}` / `{"state": "running"}` pair on pause/resume (connection stays open — pausing doesn't produce a `WorkflowExecutionEvent` since nothing in the executor runs when the state flips), and a final one that closes the stream: `{"state": "finished" | "failed" | "cancelled"}`.
 
-To render live per-node feedback (progress bar + message), group events by `node_key` — every event that carries one (`NODE_WAITING`, `NODE_RUNNING`, `NODE_PROGRESS`, `NODE_COMPLETED`, `NODE_INACTIVE`, `NODE_FAILED`) updates that node's latest `state`, `percentage`, and `message` in place. This is exactly what the bundled dashboard's Run Control page does — see [HTML UI → Live node progress](html-ui.md#live-node-progress).
+To render live per-node feedback (progress bar + message), group events by `node_key` — every event that carries one (`NODE_WAITING`, `NODE_RUNNING`, `NODE_PROGRESS`, `NODE_INPUT_REQUESTED`, `NODE_INPUT_RECEIVED`, `NODE_COMPLETED`, `NODE_INACTIVE`, `NODE_FAILED`) updates that node's latest `state`, `percentage`, and `message` in place. This is exactly what the bundled dashboard's Run Control page does — see [HTML UI → Live node progress](html-ui.md#live-node-progress) and [HTML UI → Operator input prompts](html-ui.md#operator-input-prompts).
 
 ## Logs
 

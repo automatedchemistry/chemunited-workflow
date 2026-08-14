@@ -20,6 +20,10 @@ const protocols = ref<ProtocolMeta[]>([])
 const streamStatus = ref<'closed' | 'opening' | 'open' | 'reconnecting'>('closed')
 const runId = ref<string | null>(store.activeRunId)
 
+// Operator's in-progress reply text, keyed by nodeId — local draft state,
+// not server-driven like the rest of NodeCard.
+const inputDrafts = ref<Record<string, string>>({})
+
 // Drives the live wait-countdown display — ticks while any node has an
 // active wait_seconds, updated on a shared interval rather than one timer
 // per node.
@@ -171,6 +175,8 @@ function openStream() {
                 message: '',
                 waitSeconds: null,
                 waitStartedAt: null,
+                awaitingInput: false,
+                inputPrompt: '',
               }
               card.nodes.push(node)
             }
@@ -205,6 +211,17 @@ function openStream() {
               } else {
                 node.waitSeconds = null
                 node.waitStartedAt = null
+              }
+
+              // Fire-once like the wait countdown above: present only on the
+              // event that requests it, cleared by anything else (a reply,
+              // a timeout/cancel failure, or any later event).
+              if (eventType === 'NODE_INPUT_REQUESTED') {
+                node.awaitingInput = true
+                node.inputPrompt = typeof data.message === 'string' ? data.message : ''
+              } else {
+                node.awaitingInput = false
+                node.inputPrompt = ''
               }
             }
           }
@@ -331,6 +348,41 @@ async function resumeRun() {
   }
 }
 
+async function submitOperatorInput(node: NodeCard) {
+  const value = inputDrafts.value[node.nodeId] ?? ''
+  try {
+    const res = await fetch('/run/input', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ node_id: node.nodeId, value }),
+    })
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: res.statusText })) as { detail?: string }
+      store.setMessage(`Reply failed: ${err.detail ?? res.statusText}`, 'error')
+      return
+    }
+    delete inputDrafts.value[node.nodeId]
+  } catch {
+    store.setMessage('Could not reach the run endpoint.', 'error')
+  }
+}
+
+// Restore prompt UI for any node still awaiting a reply after a reconnect —
+// the SSE stream only delivers NODE_INPUT_REQUESTED once, live, so a client
+// that (re)opens the stream after it already fired would otherwise show the
+// run as silently stalled.
+function applyPendingInputs() {
+  for (const [nodeId, message] of Object.entries(store.pendingInputs)) {
+    for (const card of store.processCards) {
+      const node = card.nodes.find(n => n.nodeId === nodeId)
+      if (node) {
+        node.awaitingInput = true
+        node.inputPrompt = message
+      }
+    }
+  }
+}
+
 onMounted(async () => {
   // Frozen while paused so the wait-countdown display holds steady instead
   // of running down time that isn't actually elapsing.
@@ -343,6 +395,7 @@ onMounted(async () => {
   if ((store.runState === 'running' || store.runState === 'paused') && store.activeRunId) {
     runId.value = store.activeRunId
     store.setMessage('Reconnected to active run. Listening for events.', 'info')
+    applyPendingInputs()
     openStream()
   } else if (store.runState !== 'idle') {
     runId.value = store.activeRunId
@@ -576,6 +629,25 @@ onUnmounted(() => {
                   <span class="node-wait-time">{{ formatWaitTime(remainingWaitSeconds(node)) }}</span>
                 </span>
               </div>
+              <form
+                v-if="node.awaitingInput"
+                class="node-input-row"
+                @submit.prevent="submitOperatorInput(node)"
+              >
+                <label class="node-input-prompt" :for="`input-${node.nodeId}`">
+                  {{ node.inputPrompt || 'Operator input requested.' }}
+                </label>
+                <div class="node-input-controls">
+                  <input
+                    :id="`input-${node.nodeId}`"
+                    v-model="inputDrafts[node.nodeId]"
+                    type="text"
+                    class="node-input-field"
+                    placeholder="Type a reply…"
+                  >
+                  <button type="submit" class="primary-action node-input-submit">Reply</button>
+                </div>
+              </form>
             </div>
           </div>
         </div>
@@ -1115,6 +1187,50 @@ onUnmounted(() => {
   font-variant-numeric: tabular-nums;
   color: var(--color-primary);
   white-space: nowrap;
+}
+
+/* ── Operator input prompt ──────────────────────────── */
+.node-input-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin-top: 0.5rem;
+  padding: 0.55rem 0.65rem;
+  border: 1px solid color-mix(in srgb, var(--color-primary) 30%, transparent);
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--color-primary) 6%, transparent);
+}
+
+.node-input-prompt {
+  font-size: 0.75rem;
+  font-weight: 620;
+  color: var(--color-heading);
+}
+
+.node-input-controls {
+  display: flex;
+  gap: 0.4rem;
+}
+
+.node-input-field {
+  flex: 1;
+  padding: 0.4rem 0.6rem;
+  font-size: 0.8rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-background);
+  color: var(--color-text);
+}
+
+.node-input-field:focus {
+  outline: none;
+  border-color: var(--color-primary);
+}
+
+.node-input-submit {
+  flex-shrink: 0;
+  padding: 0.4rem 0.9rem;
+  font-size: 0.78rem;
 }
 
 /* ── Animations ─────────────────────────────────────── */

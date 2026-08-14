@@ -17,6 +17,7 @@ A NetworkX-based workflow execution engine for conditional automation of chemist
 - **Protocol versioning** with timestamped file history and schema validation
 - **Single-run execution model** — only one experiment at a time; `POST /run/` returns HTTP 409 if a run is already active, preventing accidental double-dispatch on physical hardware
 - **Browser-based dashboard** (Vue SPA) with live run monitoring, per-node progress bars, log viewer, and device status — its built assets ship with the package, no build step required to use it
+- **Human-in-the-loop checkpoints** — a node can pause and wait for an operator to reply on the dashboard before continuing, with a mandatory timeout so a run never blocks forever
 - **Customisable per-project dashboard** — drop a pre-built SPA into `{project}/ui/dist/` to override the bundled UI; falls back automatically when absent
 - **Standalone sensor monitoring** — register device variables, start polling sessions independent of protocol runs, and read back time-series profiles
 
@@ -28,7 +29,7 @@ A NetworkX-based workflow execution engine for conditional automation of chemist
 - [HTML UI](docs/html-ui.md) — dashboard pages, per-project overrides, and how the Vue SPA is built
 - [API Reference](docs/api-reference.md)
 - [MCP Tools](docs/mcp-tools.md)
-- [Concepts](docs/concepts.md) — execution model, physical units, dry-run
+- [Concepts](docs/concepts.md) — execution model, physical units, dry-run, human-in-the-loop input
 - [Running Tests](docs/contributing.md)
 
 ## License

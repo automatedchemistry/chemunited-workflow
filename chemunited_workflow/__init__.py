@@ -3,7 +3,11 @@
 from .clients import BaseClient, ComponentClient
 from .compiler import compile_workflow
 from .enums import NodeState, WorkflowEventType
-from .exceptions import ConcurrentClientAccessError, RunCancelledError
+from .exceptions import (
+    ConcurrentClientAccessError,
+    OperatorInputTimeoutError,
+    RunCancelledError,
+)
 from .executor import WorkflowExecutor
 from .models import (
     LoopBackSpec,
@@ -26,6 +30,7 @@ __all__ = [
     "ComponentClient",
     "ConcurrentClientAccessError",
     "RunCancelledError",
+    "OperatorInputTimeoutError",
     "WorkflowExecutor",
     "compile_workflow",
     "NodeConfig",
