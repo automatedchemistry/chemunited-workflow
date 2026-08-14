@@ -16,9 +16,13 @@ _LOCKFILE_NAME = "run.lock"
 
 class RunState(str, Enum):
     RUNNING = "running"
+    PAUSED = "paused"
     FINISHED = "finished"
     FAILED = "failed"
     CANCELLED = "cancelled"
+
+
+_ACTIVE_STATES = (RunState.RUNNING, RunState.PAUSED)
 
 
 @dataclass
@@ -26,6 +30,7 @@ class RunRecord:
     run_id: str
     state: RunState = RunState.RUNNING
     cancel_event: threading.Event = field(default_factory=threading.Event)
+    pause_event: threading.Event = field(default_factory=threading.Event)
     events: list[WorkflowExecutionEvent] = field(default_factory=list)
     results: list[WorkflowResult] = field(default_factory=list)
 
@@ -95,7 +100,7 @@ class RunStore:
     def try_start(self, protocol_filename: str) -> str | None:
         """Atomically start a new run. Returns the derived run_id, or None if busy."""
         with self._lock:
-            if self._record is not None and self._record.state == RunState.RUNNING:
+            if self._record is not None and self._record.state in _ACTIVE_STATES:
                 return None
             stem = Path(protocol_filename).stem
             now = datetime.now().strftime("%Y-%m-%dT%H-%M-%S")
@@ -143,18 +148,42 @@ class RunStore:
                 return None
             return self._record.cancel_event
 
+    def pause_event(self) -> threading.Event | None:
+        with self._lock:
+            if self._record is None:
+                return None
+            return self._record.pause_event
+
     def cancel(self) -> bool:
         with self._lock:
-            if self._record is None or self._record.state != RunState.RUNNING:
+            if self._record is None or self._record.state not in _ACTIVE_STATES:
                 return False
             self._record.state = RunState.CANCELLED
             self._record.cancel_event.set()
+            # Wake anything blocked in a pause checkpoint so it observes cancellation.
+            self._record.pause_event.clear()
         self._delete_lockfile()
+        return True
+
+    def pause(self) -> bool:
+        with self._lock:
+            if self._record is None or self._record.state != RunState.RUNNING:
+                return False
+            self._record.state = RunState.PAUSED
+            self._record.pause_event.set()
+        return True
+
+    def resume(self) -> bool:
+        with self._lock:
+            if self._record is None or self._record.state != RunState.PAUSED:
+                return False
+            self._record.state = RunState.RUNNING
+            self._record.pause_event.clear()
         return True
 
     @property
     def active_run_id(self) -> str | None:
         with self._lock:
-            if self._record is not None and self._record.state == RunState.RUNNING:
+            if self._record is not None and self._record.state in _ACTIVE_STATES:
                 return self._record.run_id
             return None

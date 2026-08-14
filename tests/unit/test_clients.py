@@ -287,6 +287,54 @@ def test_is_idle_polling_stops_when_cancelled(mocker):
     assert time.monotonic() - started < 1.0
 
 
+def test_call_blocks_while_paused_then_proceeds(mocker):
+    """Mid-node granularity: a call holds at the pause checkpoint, not just
+    between nodes, and continues once resumed."""
+    response = requests.Response()
+    response.status_code = 200
+    response._content = b"true"
+    mocker.patch.object(BaseClient, "get", return_value=response)
+
+    pause_event = threading.Event()
+    pause_event.set()
+    client = ComponentClient(BASE_URL, timeout_commands="", pause_event=pause_event)
+
+    timer = threading.Timer(0.05, pause_event.clear)
+    started = time.monotonic()
+    timer.start()
+    try:
+        client.get("/x", raw_response=True)
+    finally:
+        timer.cancel()
+
+    assert time.monotonic() - started >= 0.05
+
+
+def test_call_cancelled_while_paused_raises_and_unblocks(mocker):
+    mocker.patch.object(BaseClient, "get", return_value=_ok_json_response())
+
+    pause_event = threading.Event()
+    pause_event.set()
+    cancel_event = threading.Event()
+    client = ComponentClient(
+        BASE_URL,
+        timeout_commands="",
+        cancellation_token=cancel_event,
+        pause_event=pause_event,
+    )
+
+    timer = threading.Timer(0.05, cancel_event.set)
+    started = time.monotonic()
+    timer.start()
+    try:
+        with pytest.raises(RunCancelledError):
+            client.get("/x", raw_response=True)
+    finally:
+        timer.cancel()
+
+    assert time.monotonic() - started < 1.0
+
+
 def test_dry_run_put_does_not_poll_is_idle(mocker):
     get_spy = mocker.patch.object(BaseClient, "get")
 

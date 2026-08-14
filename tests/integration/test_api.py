@@ -49,6 +49,38 @@ class SlowProcess(Process):
         return True
 """
 
+PAUSABLE_PROCESS_SRC = """
+from pathlib import Path
+
+from pydantic import BaseModel
+from chemunited_workflow import Process, NodeExecutionContext, WorkflowNodeSpec
+import networkx as nx
+
+
+class PausableConfig(BaseModel):
+    marker_path: str
+    wait_seconds: float = 1.0
+
+
+class PausableProcess(Process):
+    def build_workflow(self):
+        graph = nx.DiGraph()
+        graph.add_node(
+            "start",
+            **WorkflowNodeSpec(
+                node_id="start",
+                method="start",
+                label="Start",
+            ).model_dump(exclude_none=True),
+        )
+        return graph
+
+    def start(self, ctx: NodeExecutionContext) -> bool:
+        Path(self.config.marker_path).write_text("waiting", encoding="utf-8")
+        self.platform._wait(self.config.wait_seconds)
+        return True
+"""
+
 
 def _load_module(path: Path, name: str):
     spec = importlib.util.spec_from_file_location(name, path)
@@ -257,10 +289,58 @@ def test_cancel_when_no_run(client):
     assert r.status_code == 404
 
 
+def test_pause_when_no_run(client):
+    r = client.post("/run/pause")
+    assert r.status_code == 404
+
+
+def test_resume_when_no_run(client):
+    r = client.post("/run/resume")
+    assert r.status_code == 404
+
+
+def test_pause_active_run(client):
+    r = client.post("/run/", json={"protocol": "run_001.json"})
+    assert r.status_code == 202
+    pr = client.post("/run/pause")
+    # 409 if the run raced to a terminal state before the pause landed.
+    assert pr.status_code in (204, 409)
+
+
+def test_pause_when_already_paused_returns_409(app, client):
+    from chemunited_workflow.api.dependencies import get_project_holder
+
+    holder = app.dependency_overrides[get_project_holder]()
+    holder.run_store.try_start("run_001.json")
+    holder.run_store.pause()
+    r = client.post("/run/pause")
+    assert r.status_code == 409
+
+
+def test_resume_when_not_paused_returns_409(app, client):
+    from chemunited_workflow.api.dependencies import get_project_holder
+
+    holder = app.dependency_overrides[get_project_holder]()
+    holder.run_store.try_start("run_001.json")
+    r = client.post("/run/resume")
+    assert r.status_code == 409
+
+
+def test_resume_paused_run(app, client):
+    from chemunited_workflow.api.dependencies import get_project_holder
+
+    holder = app.dependency_overrides[get_project_holder]()
+    holder.run_store.try_start("run_001.json")
+    holder.run_store.pause()
+    r = client.post("/run/resume")
+    assert r.status_code == 204
+    assert holder.run_store.get().state.value == "running"
+
+
 def test_get_active_run_when_idle(client):
     r = client.get("/run/active")
     assert r.status_code == 200
-    assert r.json() == {"active_run_id": None}
+    assert r.json() == {"active_run_id": None, "state": None}
 
 
 def test_get_active_run_while_running(app):
@@ -274,7 +354,22 @@ def test_get_active_run_while_running(app):
         r = local_client.get("/run/active")
 
     assert r.status_code == 200
-    assert r.json() == {"active_run_id": run_id}
+    assert r.json() == {"active_run_id": run_id, "state": "running"}
+
+
+def test_get_active_run_while_paused(app):
+    from chemunited_workflow.api.dependencies import get_project_holder
+
+    holder = app.dependency_overrides[get_project_holder]()
+    run_id = holder.run_store.try_start("run_001.json")
+    assert run_id is not None
+    assert holder.run_store.pause() is True
+
+    with TestClient(app) as local_client:
+        r = local_client.get("/run/active")
+
+    assert r.status_code == 200
+    assert r.json() == {"active_run_id": run_id, "state": "paused"}
 
 
 def test_start_run_while_active_returns_409(client, app):
@@ -373,6 +468,99 @@ def test_cancel_run_interrupts_client_wait(tmp_path):
     assert report["results"]
     assert time.monotonic() - started < 1.0
     assert "Run was cancelled" in next(iter(report["results"][0]["errors"].values()))
+
+
+def test_pause_run_holds_wait_then_resume_continues(tmp_path):
+    """The node's platform._wait(1.0) would finish well within the paused
+    hold window if pause didn't actually freeze it — proves time spent
+    paused doesn't count against the wait deadline."""
+    dirs = make_project_tree(tmp_path)
+    wait_marker = tmp_path / "client_wait_started_pause.txt"
+    (dirs["connectivity_dir"] / "associations.json").write_text(
+        json.dumps(
+            {
+                "server_url": "http://device-server:8000",
+                "associations": [{"component": "pump", "component_url": "pump"}],
+            }
+        ),
+        encoding="utf-8",
+    )
+    (dirs["process_dir"] / "pausable_process.py").write_text(
+        PAUSABLE_PROCESS_SRC,
+        encoding="utf-8",
+    )
+    (dirs["historic_dir"] / "pausable_run.json").write_text(
+        json.dumps(
+            {
+                "main_parameter": {
+                    "reagent_volume_ml": 5.0,
+                    "target_temperature_c": 25.0,
+                },
+                "pausable_process_0": {
+                    "marker_path": str(wait_marker),
+                    "wait_seconds": 1.0,
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    from chemunited_workflow.api.dependencies import get_project_holder
+    from chemunited_workflow.project_loader import ProjectModules
+
+    pausable_mod = _load_module(
+        dirs["process_dir"] / "pausable_process.py", "pausable_process"
+    )
+    main_mod = _load_module(
+        dirs["process_dir"] / "main_parameters.py",
+        "main_parameters_for_pause",
+    )
+    api = create_api()
+    holder = api.dependency_overrides[get_project_holder]()
+    holder.load(
+        ProjectModules(
+            project_dir=tmp_path,
+            processes={"pausable_process": pausable_mod.PausableProcess},
+            configs={"pausable_process": pausable_mod.PausableConfig},
+            main_parameter_class=main_mod.MainParameter,
+        )
+    )
+    local_client = TestClient(api)
+
+    r = local_client.post(
+        "/run/",
+        json={"protocol": "pausable_run.json", "dry_run": True},
+    )
+    assert r.status_code == 202
+
+    deadline = time.monotonic() + 2.0
+    while time.monotonic() < deadline and not wait_marker.exists():
+        time.sleep(0.02)
+    assert wait_marker.exists()
+
+    pr = local_client.post("/run/pause")
+    assert pr.status_code == 204
+    assert local_client.get("/run/status").json()["state"] == "paused"
+
+    # Longer than wait_seconds (1.0s) — if pause didn't freeze the deadline
+    # the node would have completed and the run would already be finished.
+    time.sleep(1.3)
+    assert local_client.get("/run/active").json()["state"] == "paused"
+
+    rr = local_client.post("/run/resume")
+    assert rr.status_code == 204
+
+    report = None
+    deadline = time.monotonic() + 3.0
+    while time.monotonic() < deadline:
+        resp = local_client.get("/run/report")
+        if resp.status_code == 200:
+            report = resp.json()
+            break
+        time.sleep(0.05)
+
+    assert report is not None
+    assert report["state"] == "finished"
 
 
 # ── /components ───────────────────────────────────────────────────────────────

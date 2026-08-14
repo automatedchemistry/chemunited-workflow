@@ -85,6 +85,7 @@ class OpcUaComponentClient(DeviceClientMixin):
         timeout_commands: str = "10 s",
         error_resilient: bool = False,
         cancellation_token: threading.Event | None = None,
+        pause_event: threading.Event | None = None,
     ) -> None:
         self._endpoint = endpoint
         self._root_node_id = root_node_id
@@ -102,6 +103,7 @@ class OpcUaComponentClient(DeviceClientMixin):
             timeout_commands=timeout_commands,
             error_resilient=error_resilient,
             cancellation_token=cancellation_token,
+            pause_event=pause_event,
         )
 
     def _ensure_connected(self) -> Client:

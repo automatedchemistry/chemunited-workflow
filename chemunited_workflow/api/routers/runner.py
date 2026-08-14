@@ -25,8 +25,18 @@ STREAM_HEARTBEAT_INTERVAL_SECONDS = 5.0
 async def get_active_run(
     holder: ProjectHolder = Depends(get_project_holder),
 ):
-    """Return the active run ID without consuming queued execution events."""
-    return {"active_run_id": holder.active_run_id()}
+    """Return the active run ID and state without consuming queued events.
+
+    `state` is `"running"` or `"paused"` while active, `null` if no run is
+    active — lets a reconnecting client tell a paused run apart from a
+    running one without popping events off `/status`.
+    """
+    run_id = holder.active_run_id()
+    rec = holder.run_store.get() if run_id is not None else None
+    return {
+        "active_run_id": run_id,
+        "state": rec.state.value if rec is not None else None,
+    }
 
 
 @router.post("/", status_code=202)
@@ -59,8 +69,9 @@ async def start_run(
 async def get_run_status(svc: RunnerService = Depends(get_runner_service)):
     """Poll the status of the current (or last) run.
 
-    Returns the current state (`running`, `finished`, `failed`, or `cancelled`)
-    and all `WorkflowExecutionEvent` objects accumulated since the last call.
+    Returns the current state (`running`, `paused`, `finished`, `failed`, or
+    `cancelled`) and all `WorkflowExecutionEvent` objects accumulated since
+    the last call.
     Events are cleared on each read. For a continuous feed, use `/stream` instead.
     """
     rec = svc._run_store.get()
@@ -86,7 +97,7 @@ async def get_run_report(svc: RunnerService = Depends(get_runner_service)):
     rec = svc._run_store.get()
     if rec is None:
         return None
-    if rec.state == RunState.RUNNING:
+    if rec.state in (RunState.RUNNING, RunState.PAUSED):
         raise HTTPException(status_code=202, detail="Run has not finished yet.")
     return {
         "run_id": rec.run_id,
@@ -99,8 +110,10 @@ async def get_run_report(svc: RunnerService = Depends(get_runner_service)):
 async def stream_run(svc: RunnerService = Depends(get_runner_service)):
     """Stream execution events as Server-Sent Events (SSE).
 
-    Keeps the connection open while the run is active and pushes each
-    `WorkflowExecutionEvent` as it arrives. Closes with a final
+    Keeps the connection open while the run is active (`running` or `paused`)
+    and pushes each `WorkflowExecutionEvent` as it arrives. Also pushes a
+    `{"state": "paused"|"running"}` frame whenever the run is paused or
+    resumed. Closes with a final
     `{"state": "finished"|"failed"|"cancelled"}` frame when the run ends.
     For simple polling without a persistent connection, use `/status` instead.
     """
@@ -126,24 +139,34 @@ async def _generate_run_stream(
         return
 
     last_sent = time.monotonic()
-    while rec.state == RunState.RUNNING:
+    last_state = rec.state
+    active_states = (RunState.RUNNING, RunState.PAUSED)
+    while rec.state in active_states:
         sent_event = False
         for event in svc._run_store.pop_events():
             yield f"data: {event.model_dump_json()}\n\n"
             sent_event = True
 
+        # Pausing/resuming doesn't emit a WorkflowExecutionEvent (nothing in
+        # the executor runs when the state flips), so surface the transition
+        # as its own small frame.
+        if rec.state != last_state:
+            yield f'data: {{"state": "{rec.state.value}"}}\n\n'
+            last_state = rec.state
+            sent_event = True
+
         now = time.monotonic()
         if sent_event:
             last_sent = now
-        elif rec.state == RunState.RUNNING and now - last_sent >= heartbeat_interval:
+        elif rec.state in active_states and now - last_sent >= heartbeat_interval:
             yield ": heartbeat\n\n"
             last_sent = now
 
         await asyncio.sleep(poll_interval)
 
-    # The run can transition out of RUNNING between one poll's sleep and the
-    # next loop-condition check; any events appended in that gap would
-    # otherwise be dropped, so drain the queue once more before closing out.
+    # The run can transition out of RUNNING/PAUSED between one poll's sleep
+    # and the next loop-condition check; any events appended in that gap
+    # would otherwise be dropped, so drain the queue once more before closing.
     for event in svc._run_store.pop_events():
         yield f"data: {event.model_dump_json()}\n\n"
 
@@ -186,7 +209,8 @@ async def cancel_run(svc: RunnerService = Depends(get_runner_service)):
     to a device completes normally; execution stops at the next step checkpoint.
     The physical hardware is left in whatever state it reached. If the server was
     restarted mid-run, the lock may need to be cleared manually via this endpoint
-    even if no process is actively running.
+    even if no process is actively running. Works from either `running` or
+    `paused`.
 
     Returns 404 if no run is active.
     """
@@ -194,4 +218,46 @@ async def cancel_run(svc: RunnerService = Depends(get_runner_service)):
         raise HTTPException(
             status_code=404,
             detail="No active run to cancel.",
+        )
+
+
+@router.post("/pause", status_code=204)
+async def pause_run(svc: RunnerService = Depends(get_runner_service)):
+    """Pause the active run.
+
+    Sends a cooperative pause signal. Execution holds at the next checkpoint —
+    which may be between individual device calls inside a node, not just
+    between nodes — then blocks until resumed or cancelled. The physical
+    hardware is left in whatever state it reached; nothing is moved to a
+    "safe" position.
+
+    Returns 404 if no run is active, or 409 if the run isn't currently running
+    (e.g. it's already paused, or has finished).
+    """
+    if not svc._run_store.pause():
+        rec = svc._run_store.get()
+        if rec is None:
+            raise HTTPException(status_code=404, detail="No active run to pause.")
+        raise HTTPException(
+            status_code=409,
+            detail=f"Run is '{rec.state.value}', not 'running' — cannot pause.",
+        )
+
+
+@router.post("/resume", status_code=204)
+async def resume_run(svc: RunnerService = Depends(get_runner_service)):
+    """Resume a paused run.
+
+    Clears the pause signal so execution continues from exactly where it
+    held.
+
+    Returns 404 if no run is active, or 409 if the run isn't currently paused.
+    """
+    if not svc._run_store.resume():
+        rec = svc._run_store.get()
+        if rec is None:
+            raise HTTPException(status_code=404, detail="No active run to resume.")
+        raise HTTPException(
+            status_code=409,
+            detail=f"Run is '{rec.state.value}', not 'paused' — cannot resume.",
         )

@@ -82,6 +82,79 @@ def test_cancel_after_finished_returns_false():
     assert store.cancel() is False
 
 
+def test_pause_running_returns_true_and_sets_state_and_event():
+    store = RunStore()
+    store.try_start("p_2026-01-01T00-00-00.json")
+    pause_event = store.pause_event()
+    assert pause_event is not None
+    assert not pause_event.is_set()
+
+    result = store.pause()
+
+    assert result is True
+    assert store.get().state == RunState.PAUSED
+    assert pause_event.is_set()
+
+
+def test_pause_when_not_running_returns_false():
+    store = RunStore()
+    assert store.pause() is False  # no run at all
+    store.try_start("p_2026-01-01T00-00-00.json")
+    store.pause()
+    assert store.pause() is False  # already paused
+
+
+def test_resume_paused_returns_true_and_clears_event():
+    store = RunStore()
+    store.try_start("p_2026-01-01T00-00-00.json")
+    store.pause()
+    pause_event = store.pause_event()
+
+    result = store.resume()
+
+    assert result is True
+    assert store.get().state == RunState.RUNNING
+    assert not pause_event.is_set()
+
+
+def test_resume_when_not_paused_returns_false():
+    store = RunStore()
+    store.try_start("p_2026-01-01T00-00-00.json")
+    assert store.resume() is False  # still running, never paused
+
+
+def test_cancel_from_paused_returns_true_and_clears_pause_event():
+    store = RunStore()
+    store.try_start("p_2026-01-01T00-00-00.json")
+    store.pause()
+    pause_event = store.pause_event()
+
+    result = store.cancel()
+
+    assert result is True
+    assert store.get().state == RunState.CANCELLED
+    assert not pause_event.is_set()  # wakes anything blocked on the pause checkpoint
+
+
+def test_try_start_rejects_second_call_while_paused():
+    store = RunStore()
+    store.try_start("p_2026-01-01T00-00-00.json")
+    store.pause()
+    assert store.try_start("other_2026-01-01T00-00-01.json") is None
+
+
+def test_active_run_id_returns_run_id_while_paused():
+    store = RunStore()
+    run_id = store.try_start("p_2026-01-01T00-00-00.json")
+    store.pause()
+    assert store.active_run_id == run_id
+
+
+def test_pause_event_returns_none_with_no_run():
+    store = RunStore()
+    assert store.pause_event() is None
+
+
 def test_active_run_id_returns_run_id_while_running():
     store = RunStore()
     run_id = store.try_start("p_2026-01-01T00-00-00.json")

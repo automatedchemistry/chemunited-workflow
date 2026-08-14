@@ -236,6 +236,7 @@ class ComponentClient(DeviceClientMixin, BaseClient):
         timeout_commands: str = "10 s",
         error_resilient: bool = False,
         cancellation_token=None,
+        pause_event=None,
     ) -> None:
         BaseClient.__init__(self, url, dry_run=dry_run)
         self._init_device_semantics(
@@ -245,6 +246,7 @@ class ComponentClient(DeviceClientMixin, BaseClient):
             timeout_commands=timeout_commands,
             error_resilient=error_resilient,
             cancellation_token=cancellation_token,
+            pause_event=pause_event,
         )
         self._is_idle_supported: bool | None = None
 
@@ -297,6 +299,12 @@ class ComponentClient(DeviceClientMixin, BaseClient):
             else time.monotonic() + self._feedback_timeout
         )
         while True:
+            if self._pause_event is not None and self._pause_event.is_set():
+                paused_at = time.monotonic()
+                self._wait_if_paused()
+                # Time spent paused doesn't count against the idle-wait timeout.
+                if deadline is not None:
+                    deadline += time.monotonic() - paused_at
             self._raise_if_cancelled()
             try:
                 response = BaseClient.get(self, _IS_IDLE_PATH)

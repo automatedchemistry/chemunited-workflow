@@ -37,6 +37,7 @@ interface ProcessInfo {
 
 interface ActiveRunResponse {
   active_run_id: string | null
+  state: string | null
 }
 
 interface RunReport {
@@ -52,6 +53,7 @@ const protocolCount = ref<number | null>(null)
 const latestProtocol = ref<string | null>(null)
 const processCount = ref<number | null>(null)
 const activeRunId = ref<string | null>(null)
+const activeRunState = ref<string | null>(null)
 const lastRun = ref<RunReport | null>(null)
 const platformSvg = ref<string | null>(null)
 const platformDevices = ref<PlatformDevice[]>([])
@@ -82,6 +84,7 @@ function runStateClass(state: string): string {
   if (s === 'finished' || s === 'success') return 'state-success'
   if (s === 'failed' || s === 'error') return 'state-failed'
   if (s === 'running') return 'state-running'
+  if (s === 'paused') return 'state-paused'
   return 'state-idle'
 }
 
@@ -138,6 +141,7 @@ async function initialize(forceRefresh = false) {
     if (activeRes.status === 'fulfilled' && activeRes.value.ok) {
       const data = await activeRes.value.json() as ActiveRunResponse
       activeRunId.value = data.active_run_id
+      activeRunState.value = data.state
     }
 
     if (reportRes.status === 'fulfilled' && reportRes.value.ok) {
@@ -294,7 +298,9 @@ onMounted(() => {
           <p class="stat-label">Run status</p>
           <template v-if="activeRunId">
             <p class="stat-value">
-              <span class="run-badge state-running">Running</span>
+              <span class="run-badge" :class="activeRunState === 'paused' ? 'state-paused' : 'state-running'">
+                {{ activeRunState === 'paused' ? 'Paused' : 'Running' }}
+              </span>
             </p>
             <p class="stat-sub">{{ activeRunId.slice(0, 8) }}…</p>
           </template>
@@ -513,6 +519,11 @@ onMounted(() => {
 .state-running {
   color: var(--color-primary);
   background: color-mix(in srgb, var(--color-primary) 12%, transparent);
+}
+
+.state-paused {
+  color: var(--color-warning);
+  background: var(--color-warning-soft);
 }
 
 .state-idle {

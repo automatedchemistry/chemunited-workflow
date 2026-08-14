@@ -80,18 +80,20 @@ class Platform(Mapping[str, ComponentClient]):
         components: dict[str, ComponentClient] | None = None,
         *,
         cancellation_token: threading.Event | None = None,
+        pause_event: threading.Event | None = None,
     ) -> None:
         self._registry: dict[str, ComponentClient] = dict(components or {})
         self._cancellation_token = cancellation_token
+        self._pause_event = pause_event
 
     def _wait(self, seconds: float) -> None:
-        """Block for ``seconds``, interruptible by run cancellation.
+        """Block for ``seconds``, interruptible by run cancellation or pause.
 
         For a fixed delay unrelated to any specific device (no idle/status
         endpoint to poll) — device commands themselves already wait for the
         device to report idle and don't need this.
         """
-        sleep_interruptibly(seconds, self._cancellation_token)
+        sleep_interruptibly(seconds, self._cancellation_token, self._pause_event)
 
     def __getitem__(self, name: str) -> ComponentClient:
         try:
@@ -121,6 +123,7 @@ class Platform(Mapping[str, ComponentClient]):
         timeout_commands: str = "10 s",
         error_resilient: bool = False,
         cancellation_token: threading.Event | None = None,
+        pause_event: threading.Event | None = None,
     ) -> "Platform":
         """Build a Platform from a connectivity/associations.json file.
 
@@ -161,6 +164,7 @@ class Platform(Mapping[str, ComponentClient]):
             timeout_commands=timeout_commands,
             error_resilient=error_resilient,
             cancellation_token=cancellation_token,
+            pause_event=pause_event,
         )
         components = {}
         for assoc in data["associations"]:
@@ -185,7 +189,9 @@ class Platform(Mapping[str, ComponentClient]):
                 name=name,
                 common={**common, "pool_json_log": pool_json_log},
             )
-        return cls(components, cancellation_token=cancellation_token)
+        return cls(
+            components, cancellation_token=cancellation_token, pause_event=pause_event
+        )
 
     @classmethod
     def from_project_dir(
@@ -197,6 +203,7 @@ class Platform(Mapping[str, ComponentClient]):
         timeout_commands: str = "10 s",
         error_resilient: bool = False,
         cancellation_token: threading.Event | None = None,
+        pause_event: threading.Event | None = None,
     ) -> "Platform":
         """Shorthand: load from ``{project_dir}/connectivity/associations.json``."""
         return cls.from_connectivity(
@@ -206,4 +213,5 @@ class Platform(Mapping[str, ComponentClient]):
             timeout_commands=timeout_commands,
             error_resilient=error_resilient,
             cancellation_token=cancellation_token,
+            pause_event=pause_event,
         )

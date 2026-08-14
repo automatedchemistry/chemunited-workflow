@@ -49,11 +49,14 @@ function formatWaitTime(seconds: number): string {
 }
 
 const isRunning = computed(() => store.runState === 'running')
-const canStart = computed(() => Boolean(store.selectedProtocol) && !isRunning.value)
+const isPaused = computed(() => store.runState === 'paused')
+const isActive = computed(() => isRunning.value || isPaused.value)
+const canStart = computed(() => Boolean(store.selectedProtocol) && !isActive.value)
 
 const stateText: Record<string, [string, string]> = {
   idle: ['Idle', 'Waiting for protocol dispatch.'],
   running: ['Running', 'Protocol is executing.'],
+  paused: ['Paused', 'Protocol execution is on hold.'],
   finished: ['Finished', 'Protocol completed successfully.'],
   failed: ['Error', 'Protocol stopped with an error.'],
   cancelled: ['Cancelled', 'Protocol cancellation requested.'],
@@ -209,7 +212,29 @@ function openStream() {
       }
     } else if ('state' in data) {
       const state = data.state as RunState
+      const wasPaused = store.runState === 'paused'
       store.setRunState(state, runId.value)
+
+      // Pausing/resuming is a mid-stream transition, not a terminal one —
+      // the connection stays open and no card/node state changes.
+      if (state === 'paused') {
+        store.setMessage('Run paused.', 'info')
+        return
+      }
+      if (state === 'running' && wasPaused) {
+        // Shift active wait countdowns forward by however long we were
+        // paused — the backend wait deadline is extended by the same
+        // amount, but no new progress event arrives to tell the UI that.
+        const pausedFor = Date.now() / 1000 - nowSeconds.value
+        for (const card of store.processCards) {
+          for (const node of card.nodes) {
+            if (node.waitStartedAt !== null) node.waitStartedAt += pausedFor
+          }
+        }
+        store.setMessage('Run resumed.', 'info')
+        return
+      }
+
       closeStream({ markFailed: state === 'failed' || state === 'cancelled' })
       if (state === 'finished')  store.setMessage('Run finished. All processes completed.', 'success')
       else if (state === 'failed') store.setMessage('Run stopped with an error.', 'error')
@@ -280,12 +305,42 @@ async function cancelRun() {
   }
 }
 
+async function pauseRun() {
+  store.setMessage('Pause requested…')
+  try {
+    const res = await fetch('/run/pause', { method: 'POST' })
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: res.statusText })) as { detail?: string }
+      store.setMessage(`Pause failed: ${err.detail ?? res.statusText}`, 'error')
+    }
+  } catch {
+    store.setMessage('Could not reach the run endpoint.', 'error')
+  }
+}
+
+async function resumeRun() {
+  store.setMessage('Resume requested…')
+  try {
+    const res = await fetch('/run/resume', { method: 'POST' })
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: res.statusText })) as { detail?: string }
+      store.setMessage(`Resume failed: ${err.detail ?? res.statusText}`, 'error')
+    }
+  } catch {
+    store.setMessage('Could not reach the run endpoint.', 'error')
+  }
+}
+
 onMounted(async () => {
-  waitTicker = window.setInterval(() => { nowSeconds.value = Date.now() / 1000 }, 250)
+  // Frozen while paused so the wait-countdown display holds steady instead
+  // of running down time that isn't actually elapsing.
+  waitTicker = window.setInterval(() => {
+    if (store.runState !== 'paused') nowSeconds.value = Date.now() / 1000
+  }, 250)
 
   await Promise.all([loadProtocols(), store.checkActiveRun()])
 
-  if (store.runState === 'running' && store.activeRunId) {
+  if ((store.runState === 'running' || store.runState === 'paused') && store.activeRunId) {
     runId.value = store.activeRunId
     store.setMessage('Reconnected to active run. Listening for events.', 'info')
     openStream()
@@ -331,7 +386,7 @@ onUnmounted(() => {
             <select
               id="protocol-select"
               v-model="store.selectedProtocol"
-              :disabled="isRunning || protocols.length === 0"
+              :disabled="isActive || protocols.length === 0"
               @change="onProtocolChange"
             >
               <option value="" disabled>
@@ -352,7 +407,7 @@ onUnmounted(() => {
               type="text"
               inputmode="text"
               placeholder="10 s"
-              :disabled="isRunning"
+              :disabled="isActive"
             />
             <span class="field-help">
               Leave blank to wait indefinitely. Use values like <code>5 s</code>.
@@ -365,7 +420,7 @@ onUnmounted(() => {
                 id="dry-run-check"
                 v-model="store.formDryRun"
                 type="checkbox"
-                :disabled="isRunning"
+                :disabled="isActive"
               />
               <span>
                 <span class="toggle-title">Dry run</span>
@@ -379,7 +434,7 @@ onUnmounted(() => {
                 id="error-resilient-check"
                 v-model="store.formErrorResilient"
                 type="checkbox"
-                :disabled="isRunning"
+                :disabled="isActive"
               />
               <span>
                 <span class="toggle-title">Error-resilient mode</span>
@@ -397,10 +452,26 @@ onUnmounted(() => {
               :disabled="!canStart"
               @click="startRun"
             >
-              {{ isRunning ? 'Running…' : 'Start Protocol' }}
+              {{ isRunning ? 'Running…' : isPaused ? 'Paused' : 'Start Protocol' }}
             </button>
             <button
               v-if="isRunning"
+              type="button"
+              class="secondary-action"
+              @click="pauseRun"
+            >
+              Pause
+            </button>
+            <button
+              v-if="isPaused"
+              type="button"
+              class="secondary-action"
+              @click="resumeRun"
+            >
+              Resume
+            </button>
+            <button
+              v-if="isActive"
               type="button"
               class="danger-action"
               @click="cancelRun"
@@ -581,6 +652,7 @@ onUnmounted(() => {
 
 .badge.idle      { color: var(--color-text-muted);  background: var(--color-background-mute); }
 .badge.running   { color: var(--color-primary);     background: var(--color-primary-soft); }
+.badge.paused    { color: var(--color-warning);     background: var(--color-warning-soft); }
 .badge.finished  { color: var(--color-success);     background: var(--color-success-soft); }
 .badge.failed    { color: var(--color-danger);      background: var(--color-danger-soft); }
 .badge.cancelled { color: var(--color-text-muted);  background: var(--color-background-mute); }
@@ -605,6 +677,7 @@ onUnmounted(() => {
 
 .status-orb.idle      { background: var(--color-text-muted); opacity: 0.55; }
 .status-orb.running   { background: var(--color-primary); animation: orb-pulse 1.5s ease-in-out infinite; }
+.status-orb.paused    { background: var(--color-warning); }
 .status-orb.finished  { background: var(--color-success); }
 .status-orb.failed    { background: var(--color-danger); }
 .status-orb.cancelled { background: var(--color-text-muted); opacity: 0.55; }
@@ -766,6 +839,7 @@ onUnmounted(() => {
 }
 
 .primary-action,
+.secondary-action,
 .danger-action {
   padding: 0.55rem 1.1rem;
   font-size: 0.84rem;
@@ -790,6 +864,17 @@ onUnmounted(() => {
 .primary-action:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+.secondary-action {
+  color: var(--color-heading);
+  background: var(--color-background-mute);
+  border: 1px solid var(--color-border);
+}
+
+.secondary-action:hover:not(:disabled) {
+  border-color: var(--color-border-hover);
+  background: var(--color-background-soft);
 }
 
 .danger-action {

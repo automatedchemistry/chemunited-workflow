@@ -11,6 +11,7 @@ from loguru import logger
 from pydantic import BaseModel
 
 from chemunited_workflow import Process, WorkflowExecutor, compile_workflow
+from chemunited_workflow.cancellation import wait_while_paused
 from chemunited_workflow.durations import parse_timeout_commands
 from chemunited_workflow.platform import Platform
 from chemunited_workflow.terminal import WorkflowLogger, create_run_log_path
@@ -96,6 +97,7 @@ class RunnerService:
                 for f in pool_dir.glob("*.jsonl"):
                     f.unlink(missing_ok=True)
             cancellation_token = self._run_store.cancel_event()
+            pause_event = self._run_store.pause_event()
             platform = Platform.from_project_dir(
                 self._project_dir,
                 dry_run=dry_run,
@@ -103,8 +105,11 @@ class RunnerService:
                 timeout_commands=timeout_commands,
                 error_resilient=error_resilient,
                 cancellation_token=cancellation_token,
+                pause_event=pause_event,
             )
             for process_name, process_index in sequence:
+                # Honor a pause requested between processes, not just mid-node.
+                wait_while_paused(pause_event, cancellation_token)
                 record = self._run_store.get()
                 if record is not None and record.state == RunState.CANCELLED:
                     return

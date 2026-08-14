@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 
-export type RunState = 'idle' | 'running' | 'finished' | 'failed' | 'cancelled'
+export type RunState = 'idle' | 'running' | 'paused' | 'finished' | 'failed' | 'cancelled'
 
 export interface NodeCard {
   nodeId: string
@@ -26,6 +26,7 @@ export interface ProcessCard {
 
 interface ActiveRunResponse {
   active_run_id: string | null
+  state: string | null
 }
 
 interface RunReport {
@@ -58,7 +59,7 @@ export const useRunStatusStore = defineStore('runStatus', () => {
         const data = await activeRes.json() as ActiveRunResponse
         if (data.active_run_id) {
           activeRunId.value = data.active_run_id
-          runState.value = 'running'
+          runState.value = data.state === 'paused' ? 'paused' : 'running'
           return
         }
       }

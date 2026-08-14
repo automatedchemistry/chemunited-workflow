@@ -663,6 +663,7 @@ const navItems = [
 }
 
 .nav-run-dot.running   { background: #53bdd7; animation: nav-dot-pulse 1.5s ease-in-out infinite; }
+.nav-run-dot.paused    { background: var(--color-warning); }
 .nav-run-dot.finished  { background: #4fd2a1; }
 .nav-run-dot.failed    { background: #ff8893; }
 .nav-run-dot.cancelled { background: #8fa5ba; }

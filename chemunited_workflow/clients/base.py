@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any
 
 
-from ..cancellation import raise_if_cancelled, sleep_interruptibly
+from ..cancellation import raise_if_cancelled, sleep_interruptibly, wait_while_paused
 from ..durations import parse_timeout_commands
 from ..exceptions import ConcurrentClientAccessError
 from .envelope import CommandResponse
@@ -65,6 +65,7 @@ class DeviceClientMixin(abc.ABC):
         timeout_commands: str = "10 s",
         error_resilient: bool = False,
         cancellation_token: threading.Event | None = None,
+        pause_event: threading.Event | None = None,
     ) -> None:
         self._dry_run = dry_run
         self._access_lock = threading.Lock()
@@ -74,6 +75,7 @@ class DeviceClientMixin(abc.ABC):
         self._feedback_timeout = parse_timeout_commands(timeout_commands)
         self._error_resilient = error_resilient
         self._cancellation_token = cancellation_token
+        self._pause_event = pause_event
 
     base_url: str
 
@@ -87,8 +89,16 @@ class DeviceClientMixin(abc.ABC):
     def _raise_if_cancelled(self) -> None:
         raise_if_cancelled(self._cancellation_token)
 
+    def _wait_if_paused(self) -> None:
+        wait_while_paused(self._pause_event, self._cancellation_token)
+
+    def _checkpoint(self) -> None:
+        """Hold while paused, then raise if the run was cancelled."""
+        self._wait_if_paused()
+        self._raise_if_cancelled()
+
     def _sleep_interruptibly(self, duration: float) -> None:
-        sleep_interruptibly(duration, self._cancellation_token)
+        sleep_interruptibly(duration, self._cancellation_token, self._pause_event)
 
     @staticmethod
     def _merge_query_params(
@@ -147,7 +157,7 @@ class DeviceClientMixin(abc.ABC):
                 "params": safe_query_params,
             }
         )
-        self._raise_if_cancelled()
+        self._checkpoint()
         if not self._access_lock.acquire(blocking=False):
             raise ConcurrentClientAccessError(
                 f"{type(self).__name__}(url={self.base_url!r}) was accessed from two threads "
@@ -165,7 +175,7 @@ class DeviceClientMixin(abc.ABC):
                 resp = self._transport_post(
                     path, params=safe_query_params, json=safe_json
                 )
-            self._raise_if_cancelled()
+            self._checkpoint()
         finally:
             self._access_lock.release()
         self._execute_post_command(verb)

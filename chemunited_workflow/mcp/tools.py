@@ -181,8 +181,10 @@ def register_tools(mcp: FastMCP, holder: ProjectHolder) -> None:
     @mcp.tool()
     def get_run_status() -> dict:
         """Poll the status of the current execution.
-        Returns the current state and all events since the last call to this tool.
-        Call repeatedly until ``state`` is ``"finished"`` or ``"failed"``."""
+        Returns the current state (``running``, ``paused``, ``finished``,
+        ``failed``, or ``cancelled``) and all events since the last call to
+        this tool. Call repeatedly until ``state`` is ``"finished"`` or
+        ``"failed"``."""
         if not holder.is_loaded():
             return {"error": _NO_PROJECT}
         rec = holder.run_store.get()
@@ -212,11 +214,37 @@ def register_tools(mcp: FastMCP, holder: ProjectHolder) -> None:
 
     @mcp.tool()
     def cancel_run() -> dict:
-        """Cancel the active run and signal clients to stop cooperatively."""
+        """Cancel the active run and signal clients to stop cooperatively.
+        Works whether the run is currently ``running`` or ``paused``."""
         if not holder.is_loaded():
             return {"error": _NO_PROJECT}
         ok = holder.run_store.cancel()
         return {"cancelled": ok}
+
+    @mcp.tool()
+    def pause_run() -> dict:
+        """Pause the active run.
+
+        Sends a cooperative pause signal. Execution holds at the next
+        checkpoint — which may be between individual device calls inside a
+        node, not just between nodes — then blocks until resumed or
+        cancelled. The physical hardware is left in whatever state it
+        reached; nothing is moved to a "safe" position. Only valid while the
+        run is ``running``.
+        """
+        if not holder.is_loaded():
+            return {"error": _NO_PROJECT}
+        ok = holder.run_store.pause()
+        return {"paused": ok}
+
+    @mcp.tool()
+    def resume_run() -> dict:
+        """Resume a paused run, continuing execution from exactly where it held.
+        Only valid while the run is ``paused``."""
+        if not holder.is_loaded():
+            return {"error": _NO_PROJECT}
+        ok = holder.run_store.resume()
+        return {"resumed": ok}
 
     # ── Process source ────────────────────────────────────────────────────────
 
