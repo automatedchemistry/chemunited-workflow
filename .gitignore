@@ -227,3 +227,6 @@ pytest-tmp-*
 CLAUDE.md
 projects/
 ._tmp/
+
+# Test mcp
+.mcp.json

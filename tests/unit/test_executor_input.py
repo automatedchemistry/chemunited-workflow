@@ -29,15 +29,15 @@ class InputProcess(Process[InputConfig]):
         graph = nx.DiGraph()
         graph.add_node(
             "start",
-            **WorkflowNodeSpec(node_id="start", method="start", label="Start").model_dump(
-                exclude_none=True
-            ),
+            **WorkflowNodeSpec(
+                node_id="start", method="start", label="Start"
+            ).model_dump(exclude_none=True),
         )
         graph.add_node(
             "finish",
-            **WorkflowNodeSpec(node_id="finish", method="finish", label="Finish").model_dump(
-                exclude_none=True
-            ),
+            **WorkflowNodeSpec(
+                node_id="finish", method="finish", label="Finish"
+            ).model_dump(exclude_none=True),
         )
         graph.add_edge(
             "start",
@@ -47,7 +47,9 @@ class InputProcess(Process[InputConfig]):
         return graph
 
     def start(self, ctx: NodeExecutionContext) -> bool:
-        self.reply = ctx.request_operator_input("Confirm reagent loaded", timeout_seconds=5.0)
+        self.reply = ctx.request_operator_input(
+            "Confirm reagent loaded", timeout_seconds=5.0
+        )
         return True
 
     def finish(self, ctx: NodeExecutionContext) -> bool:
@@ -70,7 +72,9 @@ def test_request_operator_input_returns_delivered_value_and_emits_events():
 
     start_events = [e for e in events if e.node_key == ("start", 0)]
     requested = next(
-        e for e in start_events if e.event_type == WorkflowEventType.NODE_INPUT_REQUESTED
+        e
+        for e in start_events
+        if e.event_type == WorkflowEventType.NODE_INPUT_REQUESTED
     )
     received = next(
         e for e in start_events if e.event_type == WorkflowEventType.NODE_INPUT_RECEIVED
