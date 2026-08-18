@@ -203,6 +203,43 @@ onMounted(() => {
       </button>
     </header>
 
+    <section v-if="stepSchema && selectedStep" class="schema-panel">
+      <div class="schema-heading">
+        <div>
+          <p class="page-eyebrow">Step configuration</p>
+          <h2>Variables</h2>
+          <p>Configure the parameters for <strong>{{ selectedStep }}</strong>.</p>
+        </div>
+        <span class="selected-step-chip">{{ selectedStep }}</span>
+      </div>
+
+      <div class="parameter-section">
+        <div class="section-label">
+          <span>Process parameters</span>
+          <span class="section-line"></span>
+        </div>
+        <SchemaForm
+          :properties="((stepSchema as any).config_schema?.properties ?? {})"
+          :values="stepValues[selectedStep] ?? {}"
+          :readonly="mode === 'view'"
+          @update:values="v => { if (selectedStep) stepValues[selectedStep] = v }"
+        />
+      </div>
+
+      <div v-if="Object.keys(mainParamProperties).length" class="parameter-section">
+        <div class="section-label">
+          <span>Experiment parameters</span>
+          <span class="section-line"></span>
+        </div>
+        <SchemaForm
+          :properties="mainParamProperties as any"
+          :values="stepValues['main_parameter'] ?? {}"
+          :readonly="mode === 'view'"
+          @update:values="v => { stepValues['main_parameter'] = v }"
+        />
+      </div>
+    </section>
+
     <div class="builder-grid">
       <section class="workspace-panel process-panel">
         <div class="panel-heading">
@@ -359,43 +396,6 @@ onMounted(() => {
         </button>
       </section>
     </div>
-
-    <section v-if="stepSchema && selectedStep" class="schema-panel">
-      <div class="schema-heading">
-        <div>
-          <p class="page-eyebrow">Step configuration</p>
-          <h2>Variables</h2>
-          <p>Configure the parameters for <strong>{{ selectedStep }}</strong>.</p>
-        </div>
-        <span class="selected-step-chip">{{ selectedStep }}</span>
-      </div>
-
-      <div class="parameter-section">
-        <div class="section-label">
-          <span>Process parameters</span>
-          <span class="section-line"></span>
-        </div>
-        <SchemaForm
-          :properties="((stepSchema as any).config_schema?.properties ?? {})"
-          :values="stepValues[selectedStep] ?? {}"
-          :readonly="mode === 'view'"
-          @update:values="v => { if (selectedStep) stepValues[selectedStep] = v }"
-        />
-      </div>
-
-      <div v-if="Object.keys(mainParamProperties).length" class="parameter-section">
-        <div class="section-label">
-          <span>Experiment parameters</span>
-          <span class="section-line"></span>
-        </div>
-        <SchemaForm
-          :properties="mainParamProperties as any"
-          :values="stepValues['main_parameter'] ?? {}"
-          :readonly="mode === 'view'"
-          @update:values="v => { stepValues['main_parameter'] = v }"
-        />
-      </div>
-    </section>
   </div>
 </template>
 
@@ -458,6 +458,7 @@ onMounted(() => {
   grid-template-columns: minmax(270px, 0.82fr) minmax(400px, 1.3fr);
   gap: 1rem;
   align-items: stretch;
+  margin-top: 1rem;
 }
 
 .workspace-panel,
@@ -874,7 +875,6 @@ onMounted(() => {
 }
 
 .schema-panel {
-  margin-top: 1rem;
   padding: 1.35rem;
 }
 
