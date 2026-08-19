@@ -30,6 +30,7 @@ def _make_runner(tmp_path, monitoring_service=None) -> tuple[RunnerService, RunS
     spec = importlib.util.spec_from_file_location(
         "my_process_hooks", process_dir / "my_process.py"
     )
+    assert spec is not None and spec.loader is not None
     mod = importlib.util.module_from_spec(spec)
     sys.modules["my_process_hooks"] = mod
     spec.loader.exec_module(mod)

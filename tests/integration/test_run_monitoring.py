@@ -40,7 +40,9 @@ def holder(tmp_path):
         json.dumps({"main_parameter": {}, "my_process_0": {}}), encoding="utf-8"
     )
 
-    mod = _load_module(dirs["process_dir"] / "my_process.py", "my_process_run_monitoring")
+    mod = _load_module(
+        dirs["process_dir"] / "my_process.py", "my_process_run_monitoring"
+    )
     main_mod = _load_module(
         dirs["process_dir"] / "main_parameters.py", "main_parameters_run_monitoring"
     )

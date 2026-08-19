@@ -31,7 +31,7 @@ def _safe_join(base: Path, filename: str) -> Path | None:
 def _resolve_index(holder: ProjectHolder) -> Path:
     """Prefer a project-supplied dashboard build over the bundled one."""
     if holder.project_dir is not None:
-        override = holder.project_dir / "ui" / "dist" / "index.html"
+        override = holder.project_dir / "customizations" / "ui" / "dist" / "index.html"
         if override.is_file():
             return override
     return _WEB_INDEX
@@ -64,7 +64,9 @@ async def dashboard_asset(
     holder: ProjectHolder = Depends(get_project_holder),
 ) -> FileResponse:
     if holder.project_dir is not None:
-        candidate = _safe_join(holder.project_dir / "ui" / "dist" / "assets", filename)
+        candidate = _safe_join(
+            holder.project_dir / "customizations" / "ui" / "dist" / "assets", filename
+        )
         if candidate is not None and candidate.is_file():
             return FileResponse(candidate)
     candidate = _safe_join(_WEB_DIR / "assets", filename)
@@ -166,7 +168,9 @@ async def project_static(
 ) -> Response:
     if not holder.is_loaded() or holder.project_dir is None:
         raise HTTPException(status_code=404, detail="No project loaded.")
-    file_path = _safe_join(holder.project_dir / "ui" / "static", filename)
+    file_path = _safe_join(
+        holder.project_dir / "customizations" / "ui" / "static", filename
+    )
     if file_path is None or not file_path.is_file():
         raise HTTPException(
             status_code=404, detail=f"Static file '{filename}' not found."

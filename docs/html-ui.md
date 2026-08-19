@@ -40,21 +40,22 @@ A project can supply its own pre-built dashboard and the server will prefer it o
 
 ```
 {project_dir}/
-└── ui/
-    ├── dist/
-    │   ├── index.html
-    │   └── assets/
-    │       ├── index-XXXXXXXX.js
-    │       └── index-XXXXXXXX.css
-    └── static/          # unrelated: served at /project-static/{filename}
+└── customizations/
+    └── ui/
+        ├── dist/
+        │   ├── index.html
+        │   └── assets/
+        │       ├── index-XXXXXXXX.js
+        │       └── index-XXXXXXXX.css
+        └── static/          # unrelated: served at /project-static/{filename}
 ```
 
 Resolution happens per request, driven by whatever project is currently loaded (via `chemunited-workflow serve <project_dir>` or `PUT /project/`):
 
-- `GET /`, `/run-control`, `/protocols`, `/monitoring`, `/devices`, `/logs` serve `{project_dir}/ui/dist/index.html` if it exists, otherwise the bundled `chemunited_workflow/web/index.html`.
-- `GET /assets/{filename}` looks in `{project_dir}/ui/dist/assets/` first, then falls back to the package's own `assets/`.
+- `GET /`, `/run-control`, `/protocols`, `/monitoring`, `/devices`, `/logs` serve `{project_dir}/customizations/ui/dist/index.html` if it exists, otherwise the bundled `chemunited_workflow/web/index.html`.
+- `GET /assets/{filename}` looks in `{project_dir}/customizations/ui/dist/assets/` first, then falls back to the package's own `assets/`.
 
-Your build must emit **root-absolute** asset URLs (`/assets/xyz.js`, not `./assets/xyz.js`) — this is Vite's default (no custom `base`), which is exactly what `.web-chemunited` itself uses, so pointing any Vite project's `outDir` at `{project_dir}/ui/dist` works with no extra config. Other bundlers work too as long as they emit the same root-absolute convention.
+Your build must emit **root-absolute** asset URLs (`/assets/xyz.js`, not `./assets/xyz.js`) — this is Vite's default (no custom `base`), which is exactly what `.web-chemunited` itself uses, so pointing any Vite project's `outDir` at `{project_dir}/customizations/ui/dist` works with no extra config. Other bundlers work too as long as they emit the same root-absolute convention.
 
 Two limitations to be aware of:
 

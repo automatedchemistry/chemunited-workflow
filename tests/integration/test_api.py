@@ -598,7 +598,7 @@ def test_vue_routes_return_spa_shell(client, path):
 
 
 def test_dashboard_override_index(client, project):
-    dist_dir = project["tmp_path"] / "ui" / "dist"
+    dist_dir = project["tmp_path"] / "customizations" / "ui" / "dist"
     dist_dir.mkdir(parents=True)
     (dist_dir / "index.html").write_text(
         "<html><body>CUSTOM DASHBOARD MARKER</body></html>", encoding="utf-8"
@@ -611,7 +611,7 @@ def test_dashboard_override_index(client, project):
 
 
 def test_dashboard_asset_override(client, project):
-    assets_dir = project["tmp_path"] / "ui" / "dist" / "assets"
+    assets_dir = project["tmp_path"] / "customizations" / "ui" / "dist" / "assets"
     assets_dir.mkdir(parents=True)
     (assets_dir / "custom.js").write_text("console.log('override');", encoding="utf-8")
 
