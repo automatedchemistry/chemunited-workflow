@@ -72,6 +72,11 @@ interface ParameterField {
 type DisplayMode = 'unknown' | 'numeric' | 'table'
 type NoticeType = 'info' | 'error' | 'warning' | 'success'
 
+// Reserved pseudo-component: its "commands" are function names registered in
+// the project's customizations/monitoring/monitoring_hook.py rather than GET
+// endpoints on a real device (see docs/api-reference.md#custom-sources).
+const CUSTOM_COMPONENT = 'custom'
+
 const DEFAULT_CONFIG: MonitoringConfig = {
   sample_time: 5,
   request_timeout: 5,
@@ -394,7 +399,9 @@ async function discoverCommands() {
     }
     discoveredCommands.value = await response.json() as DiscoveredCommand[]
     if (discoveredCommands.value.length === 0) {
-      discoveryMessage.value = 'No GET variables discovered for this component.'
+      discoveryMessage.value = selectedComponent.value === CUSTOM_COMPONENT
+        ? 'No custom sources registered. Add one to CUSTOM_SOURCES in customizations/monitoring/monitoring_hook.py.'
+        : 'No GET variables discovered for this component.'
       discoveryMessageType.value = 'info'
     }
   } catch (error) {
@@ -894,17 +901,22 @@ onBeforeUnmount(() => {
             <span>Component</span>
             <select v-model="selectedComponent" :disabled="isLocked" @change="discoverCommands">
               <option value="">Select component</option>
-              <option
-                v-for="assoc in configuredAssociations"
-                :key="assoc.component"
-                :value="assoc.component"
-              >
-                {{ assoc.component }}
-              </option>
+              <optgroup label="Devices">
+                <option
+                  v-for="assoc in configuredAssociations"
+                  :key="assoc.component"
+                  :value="assoc.component"
+                >
+                  {{ assoc.component }}
+                </option>
+              </optgroup>
+              <optgroup label="Custom sources">
+                <option :value="CUSTOM_COMPONENT">{{ CUSTOM_COMPONENT }}</option>
+              </optgroup>
             </select>
           </label>
           <label class="field">
-            <span>GET variable</span>
+            <span>{{ selectedComponent === CUSTOM_COMPONENT ? 'Custom source' : 'GET variable' }}</span>
             <select
               v-model="selectedCommand"
               :disabled="isLocked || isDiscovering || discoveredCommands.length === 0"

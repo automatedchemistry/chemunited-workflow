@@ -19,6 +19,7 @@ duration.
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import threading
 import time
@@ -33,6 +34,7 @@ from loguru import logger
 
 from ...clients.base import _pop_thread_resilient_errors
 from ...clients.http import ComponentClient
+from ...monitoring_context import MonitoringContext
 from ...platform import Platform
 from ..monitoring_store import MonitoringStore
 
@@ -69,8 +71,15 @@ class MonitoringService:
         here). SiLA2/OPC UA: via the client's own ``discover_commands()``,
         filtered to read-only (``get``) entries — parameter shape differs by
         protocol (raw OpenAPI parameter objects for flowchem; ``{name, in,
-        required, type}`` dicts for sila2/opcua).
+        required, type}`` dicts for sila2/opcua). ``"custom"`` is a
+        pseudo-component: its "commands" are the function names registered
+        in the project's ``customizations/monitoring/monitoring_hook.py``.
         """
+        if component == "custom":
+            return [
+                {"command": name, "summary": "", "parameters": []}
+                for name in self._load_custom_sources()
+            ]
         connectivity = self._read_associations()
         platform = Platform.from_project_dir(self._project_dir)
         client = None
@@ -246,9 +255,18 @@ class MonitoringService:
         # (ConcurrentClientAccessError) the same way two protocol-run nodes hitting one
         # device would.
         platform = Platform.from_project_dir(self._project_dir, error_resilient=True)
+        # Published for CUSTOM_SOURCES functions to read a real device through
+        # (see MonitoringContext) — same Platform/locks as everything else this
+        # ON-cycle, so a custom source's device read can't double-connect to a
+        # device another pool worker is mid-fetching in the same tick.
+        MonitoringContext.platform = platform
+        # Reloaded fresh each ON-cycle, same lifetime as `platform` above — editing
+        # monitoring_hook.py takes effect the next time monitoring is (re)started,
+        # no server restart needed.
+        custom_sources = self._load_custom_sources()
         groups: dict[str, list[dict[str, Any]]] = {}
         for var in variables:
-            groups.setdefault(var["component"], []).append(var)
+            groups.setdefault(self._group_key(var), []).append(var)
 
         tick = 0
         try:
@@ -267,8 +285,10 @@ class MonitoringService:
                     run_dir = self._run_dir(run_id) if recording and run_id else None
 
                     futures = {
-                        pool.submit(self._fetch_group, platform, component, group_vars)
-                        for component, group_vars in groups.items()
+                        pool.submit(
+                            self._fetch_group, platform, custom_sources, group_vars
+                        )
+                        for group_vars in groups.values()
                     }
                     for future in futures:
                         for var, reading in future.result():
@@ -284,23 +304,78 @@ class MonitoringService:
                     if remaining > 0:
                         stop_event.wait(timeout=remaining)
         finally:
+            # Cleared before closing clients so nothing reading MonitoringContext
+            # from outside this ON-cycle can observe a half-torn-down Platform.
+            MonitoringContext.platform = None
             for component, client in platform.items():
                 _safe_close(client, component)
+
+    @staticmethod
+    def _group_key(var: dict[str, Any]) -> str:
+        """Poll-tick group for one variable.
+
+        Real components group by component name, so variables sharing one
+        physical device share its one client (see _poll_loop's docstring).
+        Custom sources have no physical client to share, but must still
+        never be forced into the same group as a *different* custom source
+        — grouping by `command` (the registered function name) gives each
+        distinct custom source its own pool worker while letting repeat
+        entries of the *same* custom source share one, symmetric with real
+        components.
+        """
+        if var["component"] == "custom":
+            return f"custom::{var['command']}"
+        return var["component"]
+
+    def _load_custom_sources(self) -> dict[str, Any]:
+        """Load CUSTOM_SOURCES from the project's monitoring hook file, if any.
+
+        Never raises: a missing file yields an empty registry silently (custom
+        sources are optional); a file that fails to import or doesn't export a
+        CUSTOM_SOURCES dict is logged and also yields an empty registry — a
+        broken hook must never abort a poll cycle, matching the "a monitoring
+        hiccup must never abort a protocol run" principle used throughout
+        this service.
+        """
+        path = (
+            self._project_dir / "customizations" / "monitoring" / "monitoring_hook.py"
+        )
+        if not path.exists():
+            return {}
+        try:
+            spec = importlib.util.spec_from_file_location("monitoring_hook", path)
+            if spec is None or spec.loader is None:
+                raise ImportError(f"Cannot create a module spec from {path}")
+            module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(module)  # type: ignore[union-attr]
+            sources = getattr(module, "CUSTOM_SOURCES", None)
+            if not isinstance(sources, dict):
+                raise AttributeError(
+                    "monitoring_hook.py does not export a CUSTOM_SOURCES dict"
+                )
+            return sources
+        except Exception:
+            logger.exception("Failed to load custom monitoring sources from {}", path)
+            return {}
 
     def _fetch_group(
         self,
         platform: Platform,
-        component: str,
+        custom_sources: dict[str, Any],
         group_vars: list[dict[str, Any]],
     ) -> list[tuple[dict[str, Any], dict[str, Any]]]:
-        """Fetch every variable for one component sequentially, through its one
-        shared client — see _poll_loop's docstring for why this can't be per-variable.
+        """Fetch every variable in one poll-tick group sequentially — see
+        _group_key for why the group's variables must share one worker.
         """
         return [
             (
                 var,
                 self._fetch_one(
-                    platform, component, var["command"], var.get("kwargs", {})
+                    platform,
+                    var["component"],
+                    var["command"],
+                    var.get("kwargs", {}),
+                    custom_sources,
                 ),
             )
             for var in group_vars
@@ -312,8 +387,21 @@ class MonitoringService:
         component: str,
         command: str,
         kwargs: dict[str, Any],
+        custom_sources: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         now = datetime.now().isoformat()
+        if component == "custom":
+            func = (custom_sources or {}).get(command)
+            if func is None:
+                return {
+                    "time": now,
+                    "value": None,
+                    "error": f"Custom source '{command}' is not registered.",
+                }
+            try:
+                return {"time": now, "value": func(**kwargs), "error": None}
+            except Exception as exc:
+                return {"time": now, "value": None, "error": str(exc)}
         if component not in platform:
             return {
                 "time": now,

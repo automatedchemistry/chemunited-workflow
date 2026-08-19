@@ -137,6 +137,31 @@ Monitoring turns on in one of two ways:
 | `GET` | `/monitoring/history/{component}/{command}` | Bounded in-memory reading history for one variable, most recent last. `[]` for a variable that hasn't been polled yet — never `404`. |
 | `GET` | `/monitoring/recordings/{run_id}/{component}/{command}` | Full recorded time-series for one variable from a past run started with `record_monitoring: true`. Pass `?tail=N` for the last N readings. `404` if that run never recorded this variable. |
 
+### Custom sources
+
+`component: "custom"` is a reserved pseudo-device for readings computed in Python instead of polled from a real device. Its "commands" are function names registered in `{project_dir}/customizations/monitoring/monitoring_hook.py`:
+
+```python
+# customizations/monitoring/monitoring_hook.py
+CUSTOM_SOURCES: dict[str, Callable[..., Any]] = {
+    "reactor_fill_pct": lambda **kwargs: 42.0,
+}
+```
+
+Register and poll it exactly like a real variable — `{"component": "custom", "command": "reactor_fill_pct", "kwargs": {...}}` in `PUT /monitoring/config`. `GET /monitoring/discover/custom` lists the registered function names instead of querying a device. Each distinct custom source polls independently and never shares a poll-tick worker with a real component or a different custom source; a broken or missing hook file, or a raised exception inside a registered function, shows up as `error` on that reading and never stops the rest of the poll tick. The file is optional and reloaded fresh each time monitoring turns on, so edits take effect on the next start without a server restart.
+
+A registered function can read a real device by importing `MonitoringContext` and reading `MonitoringContext.platform` — the exact `Platform` (and its `ComponentClient` instances/locks) real-component readings use for that ON-cycle:
+
+```python
+from chemunited_workflow import MonitoringContext
+
+def chiller_temperature_f():
+    celsius = MonitoringContext.platform["chiller"].get("temperature")
+    return celsius * 9 / 5 + 32
+```
+
+`MonitoringContext.platform` is `None` whenever no poll cycle is running. Reading a component another pool worker is mid-fetching in the same tick never deadlocks — `ComponentClient`'s per-device lock is non-blocking, so the loser gets a `ConcurrentClientAccessError` immediately, caught the same as any other exception raised inside a custom source and surfaced as that reading's `error`. Never call `.close()` or `.register()` on anything reached through `MonitoringContext.platform` — the poll loop owns its lifecycle for the whole ON-cycle. To unit-test a function that uses it, monkeypatch `MonitoringContext.platform` directly before calling the function.
+
 Example workflow:
 
 ```bash

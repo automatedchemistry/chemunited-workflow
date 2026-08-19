@@ -9,7 +9,7 @@ from typing import Any
 
 from ..exceptions import MonitoringRunActiveError
 
-HISTORY_MAXLEN = 300
+HISTORY_MAXLEN = 25
 
 
 @dataclass

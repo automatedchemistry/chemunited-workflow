@@ -1,15 +1,10 @@
 {
-  "sample_time": 5.0,
+  "sample_time": 1.0,
   "request_timeout": 5.0,
   "variables": [
     {
-      "component": "chiller",
-      "command": "temperature",
-      "kwargs": {}
-    },
-    {
-      "component": "bubble",
-      "command": "read-voltage",
+      "component": "custom",
+      "command": "room_humidity_pct",
       "kwargs": {}
     }
   ]

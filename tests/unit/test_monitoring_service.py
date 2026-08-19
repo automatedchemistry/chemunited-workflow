@@ -13,9 +13,16 @@ import responses as resp_lib
 from chemunited_workflow.api.monitoring_store import MonitoringStore
 from chemunited_workflow.api.services.monitoring import MonitoringService
 from chemunited_workflow.exceptions import MonitoringRunActiveError
+from chemunited_workflow.monitoring_context import MonitoringContext
 from chemunited_workflow.platform import Platform
 
 _MODULE = "chemunited_workflow.api.services.monitoring.requests"
+
+
+@pytest.fixture(autouse=True)
+def _reset_monitoring_context():
+    yield
+    MonitoringContext.platform = None
 
 
 @pytest.fixture
@@ -574,3 +581,242 @@ def test_get_latest_starts_empty(svc):
 
 def test_get_history_unknown_variable_returns_empty_list(svc):
     assert svc.get_history("pump", "value") == []
+
+
+# ── custom sources ───────────────────────────────────────────────────────────
+
+
+def _write_hook(tmp_path, body: str) -> None:
+    hook_dir = tmp_path / "customizations" / "monitoring"
+    hook_dir.mkdir(parents=True, exist_ok=True)
+    (hook_dir / "monitoring_hook.py").write_text(body, encoding="utf-8")
+
+
+def test_group_key_real_component_uses_component_name():
+    var = {"component": "pump", "command": "value"}
+    assert MonitoringService._group_key(var) == "pump"
+
+
+def test_group_key_different_custom_sources_get_different_keys():
+    a = MonitoringService._group_key({"component": "custom", "command": "fn1"})
+    b = MonitoringService._group_key({"component": "custom", "command": "fn2"})
+    assert a != b
+
+
+def test_group_key_same_custom_source_shares_key():
+    a = MonitoringService._group_key(
+        {"component": "custom", "command": "fn", "kwargs": {"x": 1}}
+    )
+    b = MonitoringService._group_key(
+        {"component": "custom", "command": "fn", "kwargs": {"x": 2}}
+    )
+    assert a == b
+
+
+def test_load_custom_sources_missing_file_returns_empty(svc):
+    assert svc._load_custom_sources() == {}
+
+
+def test_load_custom_sources_loads_registered_dict(svc, tmp_path):
+    _write_hook(tmp_path, "CUSTOM_SOURCES = {'double': lambda x: x * 2}\n")
+    sources = svc._load_custom_sources()
+    assert set(sources) == {"double"}
+    assert sources["double"](x=3) == 6
+
+
+def test_load_custom_sources_missing_export_returns_empty(svc, tmp_path):
+    _write_hook(tmp_path, "NOT_THE_RIGHT_NAME = {}\n")
+    assert svc._load_custom_sources() == {}
+
+
+def test_load_custom_sources_broken_file_returns_empty_without_raising(svc, tmp_path):
+    _write_hook(tmp_path, "raise RuntimeError('boom')\n")
+    assert svc._load_custom_sources() == {}
+
+
+def test_fetch_one_custom_source_success(svc, platform):
+    reading = svc._fetch_one(
+        platform, "custom", "double", {"x": 3}, {"double": lambda x: x * 2}
+    )
+    assert reading["value"] == 6
+    assert reading["error"] is None
+
+
+def test_fetch_one_custom_source_unregistered_sets_error(svc, platform):
+    reading = svc._fetch_one(platform, "custom", "ghost", {}, {})
+    assert reading["value"] is None
+    assert "not registered" in reading["error"]
+
+
+def test_fetch_one_custom_source_exception_sets_error_without_raising(svc, platform):
+    def boom(**kwargs):
+        raise ValueError("bad reading")
+
+    reading = svc._fetch_one(platform, "custom", "boom", {}, {"boom": boom})
+    assert reading["value"] is None
+    assert "bad reading" in reading["error"]
+
+
+def test_discover_custom_lists_registered_sources(svc, tmp_path):
+    _write_hook(
+        tmp_path, "CUSTOM_SOURCES = {'double': lambda x: x * 2, 'triple': None}\n"
+    )
+    result = svc.discover("custom")
+    assert {entry["command"] for entry in result} == {"double", "triple"}
+
+
+def test_discover_custom_empty_when_no_hook_file(svc):
+    assert svc.discover("custom") == []
+
+
+@resp_lib.activate
+def test_manual_start_polls_custom_source(svc, tmp_path):
+    _write_hook(tmp_path, "CUSTOM_SOURCES = {'derived': lambda: 99}\n")
+    svc.write_config(
+        {
+            "sample_time": 0.05,
+            "variables": [{"component": "custom", "command": "derived", "kwargs": {}}],
+        }
+    )
+    svc.start()
+    assert _wait_until(lambda: "custom::derived" in svc.get_latest())
+    svc.stop()
+
+    latest = svc.get_latest()
+    assert latest["custom::derived"]["value"] == 99
+    assert latest["custom::derived"]["error"] is None
+
+
+@resp_lib.activate
+def test_custom_source_does_not_block_real_component_poll(svc, tmp_path):
+    """A custom source and a real component must poll independently — neither
+    ever waits on the other's pool worker."""
+    resp_lib.add(
+        resp_lib.GET, "http://device-server:8000/sim/pump/value", json=1.0, status=200
+    )
+    _write_hook(tmp_path, "CUSTOM_SOURCES = {'derived': lambda: 99}\n")
+    svc.write_config(
+        {
+            "sample_time": 0.05,
+            "variables": [
+                {"component": "pump", "command": "value", "kwargs": {}},
+                {"component": "custom", "command": "derived", "kwargs": {}},
+            ],
+        }
+    )
+    svc.start()
+    assert _wait_until(
+        lambda: "pump::value" in svc.get_latest()
+        and "custom::derived" in svc.get_latest()
+    )
+    svc.stop()
+
+    latest = svc.get_latest()
+    assert latest["pump::value"]["value"] == 1.0
+    assert latest["custom::derived"]["value"] == 99
+
+
+# ── MonitoringContext (platform access for custom sources) ─────────────────
+
+
+def test_monitoring_context_platform_none_before_start():
+    assert MonitoringContext.platform is None
+
+
+@resp_lib.activate
+def test_manual_start_sets_monitoring_context_platform(svc):
+    resp_lib.add(
+        resp_lib.GET, "http://device-server:8000/sim/pump/value", json=1.0, status=200
+    )
+    svc.write_config(
+        {
+            "sample_time": 0.05,
+            "variables": [{"component": "pump", "command": "value", "kwargs": {}}],
+        }
+    )
+    svc.start()
+    assert _wait_until(lambda: MonitoringContext.platform is not None)
+    svc.stop()
+    assert _wait_until(lambda: MonitoringContext.platform is None)
+
+
+@resp_lib.activate
+def test_fetch_one_custom_source_reads_real_component_via_monitoring_context(
+    svc, platform
+):
+    resp_lib.add(
+        resp_lib.GET, "http://device-server:8000/sim/pump/value", json=5.0, status=200
+    )
+    MonitoringContext.platform = platform
+
+    def fn(**kwargs):
+        return MonitoringContext.platform["pump"].get("value") * 2
+
+    reading = svc._fetch_one(platform, "custom", "fn", {}, {"fn": fn})
+    assert reading["value"] == 10.0
+    assert reading["error"] is None
+
+
+def test_fetch_one_custom_source_monitoring_context_none_sets_error(svc, platform):
+    assert MonitoringContext.platform is None
+
+    def fn(**kwargs):
+        return MonitoringContext.platform["pump"].get("value")
+
+    reading = svc._fetch_one(platform, "custom", "fn", {}, {"fn": fn})
+    assert reading["value"] is None
+    assert reading["error"] is not None
+
+
+def test_fetch_one_custom_source_concurrent_access_caught_as_error_reading(
+    svc, platform
+):
+    """A custom source reading a component another pool worker is mid-fetching
+    in the same tick trips ComponentClient's non-blocking per-device lock —
+    this must be caught like any other exception, never propagate and kill
+    the pool worker."""
+    MonitoringContext.platform = platform
+    client = platform["pump"]
+    assert client._access_lock.acquire(blocking=False)
+    try:
+
+        def fn(**kwargs):
+            return MonitoringContext.platform["pump"].get("value")
+
+        reading = svc._fetch_one(platform, "custom", "fn", {}, {"fn": fn})
+    finally:
+        client._access_lock.release()
+
+    assert reading["value"] is None
+    assert "simultaneously" in reading["error"]
+
+
+@resp_lib.activate
+def test_manual_start_custom_source_reads_real_component_end_to_end(svc, tmp_path):
+    resp_lib.add(
+        resp_lib.GET, "http://device-server:8000/sim/pump/value", json=21.0, status=200
+    )
+    _write_hook(
+        tmp_path,
+        "from chemunited_workflow import MonitoringContext\n"
+        "\n"
+        "def pump_value_doubled(**kwargs):\n"
+        "    return MonitoringContext.platform['pump'].get('value') * 2\n"
+        "\n"
+        "CUSTOM_SOURCES = {'pump_value_doubled': pump_value_doubled}\n",
+    )
+    svc.write_config(
+        {
+            "sample_time": 0.05,
+            "variables": [
+                {"component": "custom", "command": "pump_value_doubled", "kwargs": {}}
+            ],
+        }
+    )
+    svc.start()
+    assert _wait_until(lambda: "custom::pump_value_doubled" in svc.get_latest())
+    svc.stop()
+
+    latest = svc.get_latest()
+    assert latest["custom::pump_value_doubled"]["value"] == 42.0
+    assert latest["custom::pump_value_doubled"]["error"] is None

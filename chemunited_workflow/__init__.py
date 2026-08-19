@@ -19,6 +19,7 @@ from .models import (
     WorkflowNodeSpec,
     WorkflowResult,
 )
+from .monitoring_context import MonitoringContext
 from .platform import Platform
 from .process import Process
 from .terminal import WorkflowLogger, configure_terminal_logging, create_run_log_path
@@ -43,6 +44,7 @@ __all__ = [
     "NodeState",
     "WorkflowEventType",
     "WorkflowExecutionEvent",
+    "MonitoringContext",
     "WorkflowLogger",
     "configure_terminal_logging",
     "create_run_log_path",
