@@ -30,7 +30,7 @@ When running with `--with-mcp` (MCP streamable-HTTP endpoint embedded in the Fas
 
 | Tool | Description |
 |------|-------------|
-| `start_run` | Execute a protocol file; returns a `run_id`, or an error if a run is already active. |
+| `start_run` | Execute a protocol file; returns a `run_id`, or an error if a run is already active. Pass `record_monitoring=True` to also persist monitored readings to `log/monitoring/{run_id}/` — errors instead of starting the run if no monitoring variables are registered. |
 | `get_active_run` | Return the active run ID without consuming queued execution events. |
 | `get_run_status` | Poll run state and events (clears the event queue on each call). |
 | `get_run_report` | Full per-step execution report for the current or last completed run. |
@@ -54,12 +54,12 @@ When running with `--with-mcp` (MCP streamable-HTTP endpoint embedded in the Fas
 | `discover_component_commands` | List GET commands a component exposes via its live OpenAPI schema. |
 | `get_monitoring_config` | Return the current monitoring registration (sample time, timeout, variables). |
 | `set_monitoring_config` | Register which variables to monitor; persisted to `connectivity/monitoring.json`. |
-| `start_monitoring_session` | Start a standalone background polling session using the current config. |
-| `list_monitoring_sessions` | List all known monitoring sessions and their state. |
-| `get_monitoring_session` | Return the state of a specific monitoring session. |
-| `stop_monitoring_session` | Stop an active monitoring session (recorded profiles are kept on disk). |
-| `get_monitoring_latest` | Return the latest reading per registered variable for a session. |
-| `get_monitoring_profile` | Read back the full recorded profile for one variable in a session. |
+| `get_monitoring_state` | Return `{manual_on, run_active, recording, run_id, effective_on}` — there is no session id. |
+| `start_monitoring` | Turn monitoring on manually using the current config. Fails while a protocol run has monitoring forced on. |
+| `stop_monitoring` | Turn monitoring off manually. Fails while a protocol run has monitoring forced on. |
+| `get_monitoring_latest` | Return the latest reading per registered variable. |
+| `get_monitoring_history` | Return the bounded in-memory reading history for one variable — the live visualization buffer. |
+| `get_monitoring_profile` | Read back the full recorded profile for one variable from a past run started with `record_monitoring=True`. |
 
 ## Logs
 

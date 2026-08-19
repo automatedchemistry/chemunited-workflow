@@ -38,7 +38,7 @@ def project(tmp_path):
 
 
 @pytest.fixture
-def app(project):
+def holder(project):
     from chemunited_workflow.api.dependencies import get_project_holder
     from chemunited_workflow.project_loader import ProjectModules
 
@@ -49,8 +49,8 @@ def app(project):
     )
 
     api = create_api()
-    holder = api.dependency_overrides[get_project_holder]()
-    holder.load(
+    h = api.dependency_overrides[get_project_holder]()
+    h.load(
         ProjectModules(
             project_dir=project["tmp_path"],
             processes={"my_process": mod.MyProcess},
@@ -58,7 +58,13 @@ def app(project):
             main_parameter_class=main_mod.MainParameter,
         )
     )
-    return api
+    h._api = api
+    return h
+
+
+@pytest.fixture
+def app(holder):
+    return holder._api
 
 
 @pytest.fixture
@@ -159,16 +165,28 @@ def test_put_config_persists(client, project):
     assert (project["dirs"]["connectivity_dir"] / "monitoring.json").exists()
 
 
-# ── /monitoring/sessions ─────────────────────────────────────────────────────
+# ── /monitoring/state, /start, /stop, /latest, /history ─────────────────────
 
 
-def test_start_session_without_config_422(client):
-    r = client.post("/monitoring/sessions")
+def test_initial_state_is_off(client):
+    r = client.get("/monitoring/state")
+    assert r.status_code == 200
+    assert r.json() == {
+        "manual_on": False,
+        "run_active": False,
+        "recording": False,
+        "run_id": None,
+        "effective_on": False,
+    }
+
+
+def test_start_without_config_422(client):
+    r = client.post("/monitoring/start")
     assert r.status_code == 422
 
 
 @resp_lib.activate
-def test_full_session_lifecycle(client):
+def test_manual_start_stop_lifecycle(client):
     resp_lib.add(
         resp_lib.GET,
         "http://device-server:8000/sim-ml600/pump/value",
@@ -185,53 +203,107 @@ def test_full_session_lifecycle(client):
         },
     )
 
-    start = client.post("/monitoring/sessions")
-    assert start.status_code == 201
-    session_id = start.json()["session_id"]
+    start = client.post("/monitoring/start")
+    assert start.status_code == 200
+    assert start.json()["effective_on"] is True
 
-    assert _wait_until(
-        lambda: client.get(f"/monitoring/sessions/{session_id}/latest").json() != {}
-    )
+    assert _wait_until(lambda: client.get("/monitoring/latest").json() != {})
 
-    latest = client.get(f"/monitoring/sessions/{session_id}/latest").json()
+    latest = client.get("/monitoring/latest").json()
     assert latest["pump::value"]["value"] == 99.0
 
-    listed = client.get("/monitoring/sessions").json()
-    assert any(s["session_id"] == session_id for s in listed)
+    state = client.get("/monitoring/state")
+    assert state.json()["manual_on"] is True
 
-    status = client.get(f"/monitoring/sessions/{session_id}")
-    assert status.status_code == 200
-    assert status.json()["state"] == "running"
+    history = client.get("/monitoring/history/pump/value")
+    assert history.status_code == 200
+    assert history.json()[-1]["value"] == 99.0
 
-    stop = client.delete(f"/monitoring/sessions/{session_id}")
-    assert stop.status_code == 204
+    stop = client.post("/monitoring/stop")
+    assert stop.status_code == 200
+    assert stop.json()["effective_on"] is False
 
-    profile = client.get(f"/monitoring/sessions/{session_id}/profile/pump/value")
-    assert profile.status_code == 200
-    readings = profile.json()
+
+def test_start_is_idempotent(client):
+    client.put(
+        "/monitoring/config",
+        json={
+            "sample_time": 1.0,
+            "request_timeout": 1.0,
+            "variables": [{"component": "pump", "command": "value", "kwargs": {}}],
+        },
+    )
+    first = client.post("/monitoring/start")
+    second = client.post("/monitoring/start")
+    assert first.status_code == 200
+    assert second.status_code == 200
+    client.post("/monitoring/stop")
+
+
+def test_stop_is_idempotent(client):
+    first = client.post("/monitoring/stop")
+    assert first.status_code == 200
+    assert first.json()["effective_on"] is False
+
+
+def test_latest_empty_when_never_polled(client):
+    r = client.get("/monitoring/latest")
+    assert r.status_code == 200
+    assert r.json() == {}
+
+
+def test_history_empty_for_unpolled_variable(client):
+    r = client.get("/monitoring/history/pump/value")
+    assert r.status_code == 200
+    assert r.json() == []
+
+
+def test_start_stop_409_while_run_active(client, holder):
+    holder.monitoring_service.on_run_started("run-1", record=False)
+    try:
+        start = client.post("/monitoring/start")
+        assert start.status_code == 409
+        stop = client.post("/monitoring/stop")
+        assert stop.status_code == 409
+    finally:
+        holder.monitoring_service.on_run_finished()
+
+
+# ── /monitoring/recordings ───────────────────────────────────────────────────
+
+
+def test_recording_missing_404(client):
+    r = client.get("/monitoring/recordings/no-such-run/pump/value")
+    assert r.status_code == 404
+
+
+@resp_lib.activate
+def test_recorded_run_profile_is_readable(client, holder):
+    resp_lib.add(
+        resp_lib.GET,
+        "http://device-server:8000/sim-ml600/pump/value",
+        json=55.0,
+        status=200,
+    )
+    client.put(
+        "/monitoring/config",
+        json={
+            "sample_time": 0.02,
+            "request_timeout": 1.0,
+            "variables": [{"component": "pump", "command": "value", "kwargs": {}}],
+        },
+    )
+    holder.monitoring_service.on_run_started("run-1", record=True)
+    try:
+        assert _wait_until(lambda: holder.monitoring_service.get_latest() != {})
+    finally:
+        holder.monitoring_service.on_run_finished()
+
+    r = client.get("/monitoring/recordings/run-1/pump/value")
+    assert r.status_code == 200
+    readings = r.json()
     assert len(readings) >= 1
-    assert readings[0]["value"] == 99.0
-    assert readings[0]["error"] is None
+    assert readings[0]["value"] == 55.0
 
-    tailed = client.get(f"/monitoring/sessions/{session_id}/profile/pump/value?tail=1")
+    tailed = client.get("/monitoring/recordings/run-1/pump/value?tail=1")
     assert len(tailed.json()) == 1
-
-
-def test_get_unknown_session_404(client):
-    r = client.get("/monitoring/sessions/no-such-id")
-    assert r.status_code == 404
-
-
-def test_stop_unknown_session_404(client):
-    r = client.delete("/monitoring/sessions/no-such-id")
-    assert r.status_code == 404
-
-
-def test_latest_unknown_session_404(client):
-    r = client.get("/monitoring/sessions/no-such-id/latest")
-    assert r.status_code == 404
-
-
-def test_profile_missing_404(client):
-    r = client.get("/monitoring/sessions/no-such-id/profile/pump/value")
-    assert r.status_code == 404

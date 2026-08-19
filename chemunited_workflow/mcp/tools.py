@@ -11,6 +11,7 @@ from chemunited_workflow.api.project_holder import ProjectHolder
 from chemunited_workflow.api.services.monitoring import MonitoringService
 from chemunited_workflow.api.services.protocol import ProtocolService
 from chemunited_workflow.api.services.runner import RunnerService
+from chemunited_workflow.exceptions import MonitoringRunActiveError
 from chemunited_workflow.project_loader import (
     ProjectLoadError,
     format_broken_project_error,
@@ -161,7 +162,9 @@ def register_tools(mcp: FastMCP, holder: ProjectHolder) -> None:
     # ── Run control ───────────────────────────────────────────────────────────
 
     @mcp.tool()
-    def start_run(protocol: str, dry_run: bool = False) -> dict:
+    def start_run(
+        protocol: str, dry_run: bool = False, record_monitoring: bool = False
+    ) -> dict:
         """Start executing a protocol in the background.
         Returns a ``run_id`` to poll with ``get_run_status``.
 
@@ -172,10 +175,21 @@ def register_tools(mcp: FastMCP, holder: ProjectHolder) -> None:
         dry_run:
             When ``True``, all HTTP calls to devices are suppressed and the
             workflow runs in simulation mode.
+        record_monitoring:
+            When ``True``, monitoring is forced on for the run's duration and
+            every reading is persisted to ``log/monitoring/{run_id}/``, using
+            whatever variables are currently registered via
+            ``set_monitoring_config``. Returns an error and never starts the
+            run if no monitoring variables are registered.
         """
         if not holder.is_loaded():
             return {"error": _NO_PROJECT}
-        run_id = _runner(holder).start(protocol, dry_run=dry_run)
+        try:
+            run_id = _runner(holder).start(
+                protocol, dry_run=dry_run, record_monitoring=record_monitoring
+            )
+        except ValueError as exc:
+            return {"error": str(exc)}
         return {"run_id": run_id}
 
     @mcp.tool()
@@ -457,7 +471,7 @@ def register_tools(mcp: FastMCP, holder: ProjectHolder) -> None:
 
         Persisted to ``connectivity/monitoring.json`` so the registration
         survives a server restart. Does not start polling — call
-        ``start_monitoring_session`` to begin a session.
+        ``start_monitoring`` to turn monitoring on.
 
         Parameters
         ----------
@@ -483,97 +497,94 @@ def register_tools(mcp: FastMCP, holder: ProjectHolder) -> None:
         return _monitoring(holder).read_config()
 
     @mcp.tool()
-    def start_monitoring_session() -> dict:
-        """Start a standalone monitoring session using the current registered config.
+    def get_monitoring_state() -> dict:
+        """Return the current monitoring state.
 
-        Spawns a background polling loop, independent of any protocol run.
-        Returns a ``session_id`` to use with ``get_monitoring_latest``,
-        ``get_monitoring_session``, ``stop_monitoring_session``, and
-        ``get_monitoring_profile``.
+        ``effective_on`` is true whenever readings are being polled, whether
+        from the manual toggle (``manual_on``) or because a protocol run has
+        forced monitoring on (``run_active``). ``recording``/``run_id`` are
+        set only while an active run has opted in to persisting readings to
+        disk.
+        """
+        if not holder.is_loaded():
+            return {"error": _NO_PROJECT}
+        return _monitoring(holder).get_state()
+
+    @mcp.tool()
+    def start_monitoring() -> dict:
+        """Turn monitoring on manually using the current registered config.
+
+        Idempotent if already on. Fails if no variables are registered, or
+        if a protocol run currently has monitoring forced on — the manual
+        toggle isn't available while a run is active.
         """
         if not holder.is_loaded():
             return {"error": _NO_PROJECT}
         try:
-            session_id = _monitoring(holder).start_session()
-            return {"session_id": session_id, "state": "running"}
-        except ValueError as exc:
+            _monitoring(holder).start()
+        except (ValueError, MonitoringRunActiveError) as exc:
             return {"error": str(exc)}
+        return _monitoring(holder).get_state()
 
     @mcp.tool()
-    def list_monitoring_sessions() -> list[dict]:
-        """List all known monitoring sessions and their state."""
+    def stop_monitoring() -> dict:
+        """Turn monitoring off manually. Idempotent if already off.
+
+        Fails if a protocol run currently has monitoring forced on.
+        """
+        if not holder.is_loaded():
+            return {"error": _NO_PROJECT}
+        try:
+            _monitoring(holder).stop()
+        except MonitoringRunActiveError as exc:
+            return {"error": str(exc)}
+        return _monitoring(holder).get_state()
+
+    @mcp.tool()
+    def get_monitoring_latest() -> dict:
+        """Return the latest reading per registered variable — the live dashboard feed."""
+        if not holder.is_loaded():
+            return {"error": _NO_PROJECT}
+        return _monitoring(holder).get_latest()
+
+    @mcp.tool()
+    def get_monitoring_history(component: str, command: str) -> list[dict]:
+        """Return the in-memory reading history for one variable, most recent last.
+
+        Bounded to a fixed number of readings — this is the live
+        visualization buffer, not a full recorded profile. Returns ``[]``
+        for a variable that hasn't been polled yet.
+
+        Parameters
+        ----------
+        component:
+            Component name as registered in the monitoring config.
+        command:
+            GET command/path as registered in the monitoring config.
+        """
         if not holder.is_loaded():
             return [{"error": _NO_PROJECT}]
-        return _monitoring(holder).list_sessions()
-
-    @mcp.tool()
-    def get_monitoring_session(session_id: str) -> dict:
-        """Return the state of a specific monitoring session.
-
-        Parameters
-        ----------
-        session_id:
-            Session ID returned by ``start_monitoring_session``.
-        """
-        if not holder.is_loaded():
-            return {"error": _NO_PROJECT}
-        session = _monitoring(holder).get_session(session_id)
-        if session is None:
-            return {"error": f"Session '{session_id}' not found."}
-        return session
-
-    @mcp.tool()
-    def stop_monitoring_session(session_id: str) -> dict:
-        """Stop an active monitoring session.
-
-        Recorded profile files are kept on disk and can still be read via
-        ``get_monitoring_profile``.
-
-        Parameters
-        ----------
-        session_id:
-            Session ID returned by ``start_monitoring_session``.
-        """
-        if not holder.is_loaded():
-            return {"error": _NO_PROJECT}
-        ok = _monitoring(holder).stop_session(session_id)
-        if not ok:
-            return {"error": f"Session '{session_id}' not found or not running."}
-        return {"stopped": session_id}
-
-    @mcp.tool()
-    def get_monitoring_latest(session_id: str) -> dict:
-        """Return the latest reading per registered variable — the live dashboard feed.
-
-        Parameters
-        ----------
-        session_id:
-            Session ID returned by ``start_monitoring_session``.
-        """
-        if not holder.is_loaded():
-            return {"error": _NO_PROJECT}
-        try:
-            return _monitoring(holder).get_latest(session_id)
-        except KeyError as exc:
-            return {"error": str(exc)}
+        return _monitoring(holder).get_history(component, command)
 
     @mcp.tool()
     def get_monitoring_profile(
-        session_id: str,
+        run_id: str,
         component: str,
         command: str,
         tail: int | None = None,
     ) -> list[dict]:
-        """Read back the recorded profile for one variable in a session.
+        """Read back the recorded profile for one variable from a past run.
 
         Returns every recorded reading (one entry per sampling tick, including
-        failed/missed ticks with ``error`` set) in execution order. Pass
-        ``tail`` to return only the last N readings.
+        failed/missed ticks with ``error`` set) in execution order, from
+        ``log/monitoring/{run_id}/``. Only populated for runs started with
+        ``record_monitoring=True``. Pass ``tail`` to return only the last N
+        readings.
 
         Parameters
         ----------
-        session_id:
-            Session ID returned by ``start_monitoring_session``.
+        run_id:
+            Run ID returned by ``start_run``.
         component:
             Component name as registered in the monitoring config.
         command:
@@ -584,8 +595,8 @@ def register_tools(mcp: FastMCP, holder: ProjectHolder) -> None:
         if not holder.is_loaded():
             return [{"error": _NO_PROJECT}]
         try:
-            return _monitoring(holder).read_profile(
-                session_id, component, command, tail=tail
+            return _monitoring(holder).read_recording(
+                run_id, component, command, tail=tail
             )
         except FileNotFoundError as exc:
             return [{"error": str(exc)}]

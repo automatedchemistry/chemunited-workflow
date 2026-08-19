@@ -61,6 +61,16 @@ class RunRequest(BaseModel):
             "If false (default), any error stops the entire run immediately."
         ),
     )
+    record_monitoring: bool = Field(
+        default=False,
+        title="Record monitoring data",
+        description=(
+            "If true, monitoring is forced on for this run's duration and every "
+            "reading polled is also persisted to log/monitoring/{run_id}/, using "
+            "whatever variables are currently registered via PUT /monitoring/config. "
+            "Live viewing works the same either way."
+        ),
+    )
 
     @field_validator("timeout_commands")
     @classmethod
@@ -176,9 +186,12 @@ class MonitoringConfigIn(BaseModel):
     variables: list[MonitoringVariableIn] = Field(default_factory=list)
 
 
-class MonitoringSessionOut(BaseModel):
-    session_id: str
-    state: str
+class MonitoringStateOut(BaseModel):
+    manual_on: bool
+    run_active: bool
+    recording: bool
+    run_id: str | None
+    effective_on: bool
 
 
 class MonitoringReading(BaseModel):

@@ -53,6 +53,7 @@ export const useRunStatusStore = defineStore('runStatus', () => {
   const formTimeout = ref('')
   const formDryRun = ref(false)
   const formErrorResilient = ref(false)
+  const formRecordMonitoring = ref(false)
   const formMessage = ref('')
   const formMessageType = ref<'' | 'error' | 'success' | 'info'>('')
 
@@ -122,6 +123,7 @@ export const useRunStatusStore = defineStore('runStatus', () => {
     formTimeout,
     formDryRun,
     formErrorResilient,
+    formRecordMonitoring,
     formMessage,
     formMessageType,
     restoreFromReport,

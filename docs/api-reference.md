@@ -41,7 +41,7 @@ Only one run can be active at a time (the physical platform enforces this constr
 
 | Method | Path | Description |
 |--------|------|-------------|
-| `POST` | `/run/` | Start a workflow run from a protocol file. Body: `{"protocol": "<filename>", "dry_run": false}`. `protocol` is required; `dry_run` defaults to `false`. Returns HTTP `202` with a derived `run_id`, or `409` if a run is already active. |
+| `POST` | `/run/` | Start a workflow run from a protocol file. Body: `{"protocol": "<filename>", "dry_run": false}`. `protocol` is required; `dry_run` defaults to `false`. Returns HTTP `202` with a derived `run_id`, `409` if a run is already active, or `422` if `record_monitoring: true` was passed with no monitoring variables registered (the run never starts). Pass `record_monitoring: true` to also persist every monitored variable's readings for this run — see [Monitoring](#monitoring). |
 | `GET` | `/run/active` | Return `{"active_run_id": ..., "state": ..., "pending_inputs": {...}}` without consuming queued events. `state` is `"running"` or `"paused"` while active, `null` if no run is active. `pending_inputs` maps `node_id -> prompt message` for every node currently blocked on `request_operator_input()` — lets a reconnecting dashboard client redraw an open prompt it missed on the live stream. |
 | `GET` | `/run/status` | Poll the current run state and events. Events are cleared after each read; states are `running`, `paused`, and the terminal `finished`, `failed`, `cancelled`. Returns `404` if no run has been recorded. |
 | `GET` | `/run/report` | Full execution report for the current or last run. Returns `202` if the run has not finished yet (including while paused). |
@@ -60,7 +60,8 @@ Example `POST /run/` request:
 {
   "protocol": "suzuki_batch_2026-01-15T09-30-00.json",
   "dry_run": false,
-  "error_resilient": false
+  "error_resilient": false,
+  "record_monitoring": false
 }
 ```
 
@@ -71,6 +72,8 @@ Use `dry_run: true` to simulate device calls. The workflow graph and node logic 
 default `"10 s"`, or pass `""` to poll without a timeout.
 
 Set `error_resilient: true` to allow client-side errors (HTTP failures, timeouts) to be logged without stopping the entire run. Each node's commands still run to completion; the node is marked `FAILED` and its successors become `INACTIVE`, but independent branches continue normally. Defaults to `false`.
+
+Set `record_monitoring: true` to force monitoring on for the run's duration and persist every reading to `log/monitoring/{run_id}/`, using whatever variables are currently registered via `PUT /monitoring/config`. If no variables are registered, the request fails with `422` and the run never starts — it does not start silently and record nothing. See [Monitoring](#monitoring).
 
 When a node calls `ctx.request_operator_input(message, timeout_seconds)`, the executor emits `NODE_INPUT_REQUESTED` (`message` is the prompt) and that node's worker thread blocks — other nodes keep running. Reply with `POST /run/input` using the same `node_id`; the executor then emits `NODE_INPUT_RECEIVED` (`input_value` is the reply) and the node resumes with that value. If nobody replies before `timeout_seconds` elapses, the node fails instead of waiting forever. See [Concepts → Human-in-the-Loop Input](concepts.md#human-in-the-loop-input).
 
@@ -116,19 +119,23 @@ To render live per-node feedback (progress bar + message), group events by `node
 
 ## Monitoring
 
-Standalone sensor-polling sessions that run independently of any protocol run. Config is persisted to `connectivity/monitoring.json`; profile data is written to `log/monitoring/{session_id}/`.
+A single, project-wide sensor-polling toggle — there is no session id. Config is persisted to `connectivity/monitoring.json`. Live readings are kept in a bounded in-memory buffer (a fixed cap per variable); nothing is written to disk unless a protocol run opts in via `record_monitoring: true` (see [Run control](#run-control)), in which case readings are persisted to `log/monitoring/{run_id}/` for that run's duration.
+
+Monitoring turns on in one of two ways:
+- **Manually** — `POST /monitoring/start` / `POST /monitoring/stop`, available whenever no protocol run is active.
+- **Automatically** — a protocol run started with `record_monitoring: true` (or any run, if monitoring was already manually on) forces monitoring on for its duration; the manual toggle is unavailable (`409`) while a run is active, and control reverts to whatever the manual setting already was once the run ends.
 
 | Method | Path | Description |
 |--------|------|-------------|
 | `GET` | `/monitoring/discover/{component}` | List GET commands a component exposes, read from the device server's live OpenAPI schema |
 | `GET` | `/monitoring/config` | Return the current monitoring registration (`sample_time`, `request_timeout`, `variables`) |
 | `PUT` | `/monitoring/config` | Register which variables to poll and how often. Does not start polling. |
-| `POST` | `/monitoring/sessions` | Start a polling session against the current registered config. Returns a `session_id`. |
-| `GET` | `/monitoring/sessions` | List all known sessions and their state (`running` / `stopped`) |
-| `GET` | `/monitoring/sessions/{session_id}` | Return the state of a session |
-| `DELETE` | `/monitoring/sessions/{session_id}` | Stop an active session. Profile files on disk are kept. |
-| `GET` | `/monitoring/sessions/{session_id}/latest` | Latest reading per registered variable — the live dashboard feed |
-| `GET` | `/monitoring/sessions/{session_id}/profile/{component}/{command}` | Full recorded time-series for one variable. Pass `?tail=N` for the last N readings. |
+| `GET` | `/monitoring/state` | Return `{manual_on, run_active, recording, run_id, effective_on}` |
+| `POST` | `/monitoring/start` | Turn monitoring on manually. `422` if no variables are registered, `409` if a run currently has monitoring forced on. Idempotent if already on. |
+| `POST` | `/monitoring/stop` | Turn monitoring off manually. `409` if a run currently has monitoring forced on. Idempotent if already off. |
+| `GET` | `/monitoring/latest` | Latest reading per registered variable — the live dashboard feed. `{}` if nothing has been polled yet. |
+| `GET` | `/monitoring/history/{component}/{command}` | Bounded in-memory reading history for one variable, most recent last. `[]` for a variable that hasn't been polled yet — never `404`. |
+| `GET` | `/monitoring/recordings/{run_id}/{component}/{command}` | Full recorded time-series for one variable from a past run started with `record_monitoring: true`. Pass `?tail=N` for the last N readings. `404` if that run never recorded this variable. |
 
 Example workflow:
 
@@ -148,21 +155,30 @@ curl -X PUT http://127.0.0.1:3116/monitoring/config \
     ]
   }'
 
-# 3. start a session
-curl -X POST http://127.0.0.1:3116/monitoring/sessions
-# → {"session_id": "3fa85f64-...", "state": "running"}
+# 3. turn monitoring on manually (optional — a recorded run turns it on automatically)
+curl -X POST http://127.0.0.1:3116/monitoring/start
+# → {"manual_on": true, "run_active": false, "recording": false, "run_id": null, "effective_on": true}
 
 # 4. read live values
-curl http://127.0.0.1:3116/monitoring/sessions/3fa85f64-.../latest
+curl http://127.0.0.1:3116/monitoring/latest
 
-# 5. read the full profile for one variable
-curl http://127.0.0.1:3116/monitoring/sessions/3fa85f64-.../profile/reactor_01/temperature
+# 5. read the bounded live history for one variable
+curl http://127.0.0.1:3116/monitoring/history/reactor_01/temperature
 
-# 6. stop the session
-curl -X DELETE http://127.0.0.1:3116/monitoring/sessions/3fa85f64-...
+# 6. stop monitoring
+curl -X POST http://127.0.0.1:3116/monitoring/stop
+
+# 7. start a protocol run that also records monitoring data
+curl -X POST http://127.0.0.1:3116/run/ \
+  -H "Content-Type: application/json" \
+  -d '{"protocol": "suzuki_batch_2026-01-15T09-30-00.json", "record_monitoring": true}'
+# → {"run_id": "suzuki_batch_2026-01-15T09-30-00_2026-08-19T10-00-00", "state": "running"}
+
+# 8. after the run, read back its recorded profile for one variable
+curl http://127.0.0.1:3116/monitoring/recordings/suzuki_batch_2026-01-15T09-30-00_2026-08-19T10-00-00/reactor_01/temperature
 ```
 
-Each variable is polled concurrently using its own per-request timeout, so a hung device only delays its own reading. Profile readings are stored as JSONL with one entry per tick: `{"tick": 0, "time": "...", "value": ..., "error": null}`.
+Each variable is polled concurrently using its own per-request timeout, so a hung device only delays its own reading. Recorded readings are stored as JSONL with one entry per tick: `{"tick": 0, "time": "...", "value": ..., "error": null}`.
 
 Visit `/docs` for the interactive Swagger UI, or `/` for the HTML dashboard.
 

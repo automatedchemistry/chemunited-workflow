@@ -78,15 +78,16 @@ class ProjectHolder:
             configs=modules.configs,
             main_parameter_class=modules.main_parameter_class,
         )
+        new_monitoring = MonitoringService(
+            project_dir=modules.project_dir,
+            store=self._monitoring_store,
+        )
         new_runner = RunnerService(
             project_dir=modules.project_dir,
             processes=modules.processes,
             configs=modules.configs,
             run_store=self._run_store,
-        )
-        new_monitoring = MonitoringService(
-            project_dir=modules.project_dir,
-            store=self._monitoring_store,
+            monitoring_service=new_monitoring,
         )
         self._run_store.set_project_dir(modules.project_dir)
         with self._lock:

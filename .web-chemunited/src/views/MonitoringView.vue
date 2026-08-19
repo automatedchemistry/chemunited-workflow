@@ -31,9 +31,12 @@ interface MonitoringConfig {
   variables: MonitoringVariable[]
 }
 
-interface MonitoringSession {
-  session_id: string
-  state: 'running' | 'stopped' | string
+interface MonitoringState {
+  manual_on: boolean
+  run_active: boolean
+  recording: boolean
+  run_id: string | null
+  effective_on: boolean
 }
 
 interface MonitoringReading {
@@ -75,7 +78,19 @@ const DEFAULT_CONFIG: MonitoringConfig = {
   variables: [],
 }
 
+const DEFAULT_STATE: MonitoringState = {
+  manual_on: false,
+  run_active: false,
+  recording: false,
+  run_id: null,
+  effective_on: false,
+}
+
+// Server-authoritative cap on the in-memory history buffer (see HISTORY_MAXLEN
+// in monitoring_store.py) — kept here only as a defensive client-side trim,
+// not load-bearing.
 const MAX_PROFILE_POINTS = 300
+const STATE_POLL_INTERVAL_MS = 2000
 const CHART_WIDTH = 520
 const CHART_HEIGHT = 160
 const CHART_PADDING = 18
@@ -83,7 +98,7 @@ const CHART_PADDING = 18
 const projectLoaded = ref<boolean | null>(null)
 const connectivity = ref<ConnectivityMap | null>(null)
 const config = ref<MonitoringConfig>({ ...DEFAULT_CONFIG, variables: [] })
-const sessions = ref<MonitoringSession[]>([])
+const state = ref<MonitoringState>({ ...DEFAULT_STATE })
 
 const isLoadingPage = ref(true)
 const pageError = ref('')
@@ -102,7 +117,6 @@ const paramValues = ref<Record<string, string>>({})
 const rawKwargsJson = ref('{}')
 const addVariableError = ref('')
 
-const activeSessionId = ref<string | null>(null)
 const isStarting = ref(false)
 const isStopping = ref(false)
 const isPollingLatest = ref(false)
@@ -113,17 +127,13 @@ const profiles = ref<Record<string, MonitoringReading[]>>({})
 const displayModes = ref<Record<string, DisplayMode>>({})
 
 let pollTimer: ReturnType<typeof window.setInterval> | undefined
+let statePollTimer: ReturnType<typeof window.setInterval> | undefined
 
 const associations = computed(() => connectivity.value?.associations ?? [])
 const configuredAssociations = computed(() =>
   associations.value.filter(assoc => Boolean(assoc.component_url?.trim())),
 )
-const activeRunningSession = computed(() => {
-  const running = sessions.value.filter(session => session.state === 'running')
-  return running.length ? running[running.length - 1] : null
-})
-const hasAnyRunningSession = computed(() => Boolean(activeRunningSession.value))
-const isRunning = computed(() => Boolean(activeSessionId.value))
+const isRunning = computed(() => state.value.effective_on)
 const isLocked = computed(() => isRunning.value || isStarting.value || isStopping.value)
 const selectedDiscoveredCommand = computed(() =>
   discoveredCommands.value.find(command => command.command === selectedCommand.value),
@@ -137,9 +147,9 @@ const canAddVariable = computed(() =>
 const canStart = computed(() =>
   projectLoaded.value === true
   && config.value.variables.length > 0
-  && !hasAnyRunningSession.value
-  && !isStarting.value
+  && !state.value.run_active
   && !isRunning.value
+  && !isStarting.value
 )
 
 function apiError(error: unknown, fallback: string): string {
@@ -205,7 +215,7 @@ function variableKey(variable: MonitoringVariable): string {
   return `${variable.component}::${variable.command}`
 }
 
-function profileUrl(sessionId: string, variable: MonitoringVariable): string {
+function historyUrl(variable: MonitoringVariable): string {
   const component = encodeURIComponent(variable.component)
   const command = variable.command
     .replace(/^\/+/, '')
@@ -213,7 +223,7 @@ function profileUrl(sessionId: string, variable: MonitoringVariable): string {
     .filter(Boolean)
     .map(part => encodeURIComponent(part))
     .join('/')
-  return `/monitoring/sessions/${encodeURIComponent(sessionId)}/profile/${component}/${command}?tail=${MAX_PROFILE_POINTS}`
+  return `/monitoring/history/${component}/${command}`
 }
 
 function isPlainRecord(value: unknown): value is Record<string, unknown> {
@@ -299,15 +309,6 @@ function buildKwargs(): Record<string, unknown> {
   return kwargs
 }
 
-async function refreshSessions(): Promise<MonitoringSession | null> {
-  const response = await fetch('/monitoring/sessions')
-  if (!response.ok) {
-    throw new Error(await responseError(response, 'Could not load monitoring sessions.'))
-  }
-  sessions.value = await response.json() as MonitoringSession[]
-  return activeRunningSession.value ?? null
-}
-
 async function loadMonitoringConfig() {
   const response = await fetch('/monitoring/config')
   if (!response.ok) {
@@ -331,10 +332,10 @@ async function initialize() {
     projectLoaded.value = Boolean(project.project_dir)
     if (!projectLoaded.value) return
 
-    const [componentsResponse, configResponse, sessionsResponse] = await Promise.all([
+    const [componentsResponse, configResponse, stateResponse] = await Promise.all([
       fetch('/components/'),
       fetch('/monitoring/config'),
-      fetch('/monitoring/sessions'),
+      fetch('/monitoring/state'),
     ])
 
     if (!componentsResponse.ok) {
@@ -343,17 +344,20 @@ async function initialize() {
     if (!configResponse.ok) {
       throw new Error(await responseError(configResponse, 'Could not load monitoring config.'))
     }
-    if (!sessionsResponse.ok) {
-      throw new Error(await responseError(sessionsResponse, 'Could not load monitoring sessions.'))
+    if (!stateResponse.ok) {
+      throw new Error(await responseError(stateResponse, 'Could not load monitoring state.'))
     }
 
     connectivity.value = await componentsResponse.json() as ConnectivityMap
     config.value = normalizeConfig(await configResponse.json() as Partial<MonitoringConfig>)
-    sessions.value = await sessionsResponse.json() as MonitoringSession[]
+    state.value = await stateResponse.json() as MonitoringState
 
-    if (activeRunningSession.value) {
-      await attachToSession(activeRunningSession.value, 'Attached to the active monitoring session.', 'info')
+    if (state.value.effective_on) {
+      await afterTurnedOn(
+        state.value.run_active ? 'Monitoring is running automatically for the active protocol run.' : '',
+      )
     }
+    startStatePolling()
   } catch (error) {
     pageError.value = apiError(error, 'Could not load monitoring.')
   } finally {
@@ -407,7 +411,7 @@ function resetCommandInputs() {
   addVariableError.value = ''
 }
 
-function addVariable() {
+async function addVariable() {
   if (!canAddVariable.value) return
 
   addVariableError.value = ''
@@ -435,15 +439,52 @@ function addVariable() {
   }
   selectedCommand.value = ''
   resetCommandInputs()
+
+  try {
+    await persistConfig()
+  } catch (error) {
+    addVariableError.value = apiError(
+      error,
+      'Variable added, but could not be saved to the project. It will be retried when you start monitoring.',
+    )
+  }
 }
 
-function removeVariable(variable: MonitoringVariable) {
+async function removeVariable(variable: MonitoringVariable) {
   if (isLocked.value) return
   const key = variableKey(variable)
   config.value = {
     ...config.value,
     variables: config.value.variables.filter(item => variableKey(item) !== key),
   }
+
+  try {
+    await persistConfig()
+  } catch (error) {
+    setNotice(apiError(error, 'Variable removed, but could not be saved to the project.'), 'error')
+  }
+}
+
+async function persistConfig(): Promise<void> {
+  const body: MonitoringConfig = {
+    sample_time: Number(config.value.sample_time),
+    request_timeout: Number(config.value.request_timeout),
+    variables: config.value.variables,
+  }
+  const response = await fetch('/monitoring/config', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  if (!response.ok) {
+    throw new Error(await responseError(response, 'Could not save monitoring config.'))
+  }
+  // Deliberately does NOT reassign config.value from the response, unlike
+  // putConfig() below. The local list is already the source of truth for
+  // what THIS request intended to persist — two auto-saves fired close
+  // together (e.g. removing two variables back to back) could otherwise
+  // let an older response's echoed variables list clobber a newer local
+  // edit if it happens to resolve later.
 }
 
 async function putConfig() {
@@ -464,25 +505,17 @@ async function putConfig() {
 }
 
 async function postStartOnly() {
-  const running = await refreshSessions()
-  if (running) {
-    await loadMonitoringConfig()
-    await attachToSession(running, 'Another monitoring session is active. Attached to it instead.', 'warning')
-    return
-  }
-
-  const response = await fetch('/monitoring/sessions', { method: 'POST' })
+  const response = await fetch('/monitoring/start', { method: 'POST' })
   if (!response.ok) {
-    throw new Error(await responseError(response, 'Could not start monitoring session.'))
+    throw new Error(await responseError(response, 'Could not start monitoring.'))
   }
-  const session = await response.json() as MonitoringSession
-  sessions.value = [...sessions.value, session]
+  state.value = await response.json() as MonitoringState
   canRetryStart.value = false
   startError.value = ''
-  await attachToSession(session, 'Monitoring session started.', 'success')
+  await afterTurnedOn('Monitoring started.', 'success')
 }
 
-async function startSession() {
+async function startMonitoring() {
   if (!canStart.value) return
 
   isStarting.value = true
@@ -491,18 +524,12 @@ async function startSession() {
   clearNotice()
 
   try {
-    const running = await refreshSessions()
-    if (running) {
-      await loadMonitoringConfig()
-      await attachToSession(running, 'Another monitoring session is active. Attached to it instead.', 'warning')
-      return
-    }
     await putConfig()
     try {
       await postStartOnly()
     } catch (error) {
       canRetryStart.value = true
-      startError.value = apiError(error, 'Could not start monitoring session.')
+      startError.value = apiError(error, 'Could not start monitoring.')
     }
   } catch (error) {
     startError.value = apiError(error, 'Could not start monitoring.')
@@ -518,70 +545,55 @@ async function retryStart() {
   try {
     await postStartOnly()
   } catch (error) {
-    startError.value = apiError(error, 'Could not start monitoring session.')
+    startError.value = apiError(error, 'Could not start monitoring.')
     canRetryStart.value = true
   } finally {
     isStarting.value = false
   }
 }
 
-async function stopSession() {
-  if (!activeSessionId.value || isStopping.value) return
+async function stopMonitoring() {
+  if (!isRunning.value || isStopping.value || state.value.run_active) return
 
   isStopping.value = true
   startError.value = ''
   pollError.value = ''
 
   try {
-    const sessionId = activeSessionId.value
-    const response = await fetch(`/monitoring/sessions/${encodeURIComponent(sessionId)}`, {
-      method: 'DELETE',
-    })
-    if (response.status === 404) {
-      await handleSessionLost('Session was stopped elsewhere.')
-      return
-    }
+    const response = await fetch('/monitoring/stop', { method: 'POST' })
     if (!response.ok) {
-      throw new Error(await responseError(response, 'Could not stop monitoring session.'))
+      throw new Error(await responseError(response, 'Could not stop monitoring.'))
     }
+    state.value = await response.json() as MonitoringState
     clearPolling()
-    activeSessionId.value = null
-    await refreshSessions()
-    setNotice('Monitoring session stopped.', 'success')
+    setNotice('Monitoring stopped.', 'success')
   } catch (error) {
-    pollError.value = apiError(error, 'Could not stop monitoring session.')
+    pollError.value = apiError(error, 'Could not stop monitoring.')
   } finally {
     isStopping.value = false
   }
 }
 
-async function attachToSession(session: MonitoringSession, notice = '', type: NoticeType = 'info') {
-  activeSessionId.value = session.session_id
-  latestReadings.value = {}
-  profiles.value = {}
-  displayModes.value = {}
+async function afterTurnedOn(notice = '', type: NoticeType = 'info') {
   pollError.value = ''
   startError.value = ''
-  canRetryStart.value = false
   if (notice) setNotice(notice, type)
-  await seedProfiles(config.value.variables)
+  await seedHistory(config.value.variables)
   startPolling()
   await pollLatest()
 }
 
-async function seedProfiles(variables: MonitoringVariable[]) {
-  if (!activeSessionId.value || variables.length === 0) return
-  await Promise.all(variables.map(variable => fetchProfile(variable)))
+async function seedHistory(variables: MonitoringVariable[]) {
+  if (variables.length === 0) return
+  await Promise.all(variables.map(variable => fetchHistory(variable)))
 }
 
-async function fetchProfile(variable: MonitoringVariable) {
-  if (!activeSessionId.value) return
+async function fetchHistory(variable: MonitoringVariable) {
   const key = variableKey(variable)
   try {
-    const response = await fetch(profileUrl(activeSessionId.value, variable))
-    if (response.status === 404) return
+    const response = await fetch(historyUrl(variable))
     if (!response.ok) {
-      throw new Error(await responseError(response, `Could not load profile for ${key}.`))
+      throw new Error(await responseError(response, `Could not load history for ${key}.`))
     }
     const readings = await response.json() as MonitoringReading[]
     profiles.value = {
@@ -594,7 +606,7 @@ async function fetchProfile(variable: MonitoringVariable) {
     }
     pinDisplayModeFromReadings(key, readings)
   } catch (error) {
-    pollError.value = apiError(error, `Could not load profile for ${key}.`)
+    pollError.value = apiError(error, `Could not load history for ${key}.`)
   }
 }
 
@@ -614,15 +626,11 @@ function clearPolling() {
 }
 
 async function pollLatest() {
-  if (!activeSessionId.value || isPollingLatest.value) return
+  if (!isRunning.value || isPollingLatest.value) return
 
   isPollingLatest.value = true
   try {
-    const response = await fetch(`/monitoring/sessions/${encodeURIComponent(activeSessionId.value)}/latest`)
-    if (response.status === 404) {
-      await handleSessionLost('Session was stopped elsewhere.')
-      return
-    }
+    const response = await fetch('/monitoring/latest')
     if (!response.ok) {
       throw new Error(await responseError(response, 'Could not load latest monitoring readings.'))
     }
@@ -640,11 +648,39 @@ async function pollLatest() {
   }
 }
 
-async function handleSessionLost(message: string) {
-  clearPolling()
-  activeSessionId.value = null
-  await refreshSessions().catch(() => null)
-  setNotice(message, 'warning')
+function startStatePolling() {
+  stopStatePolling()
+  statePollTimer = window.setInterval(() => {
+    void refreshState()
+  }, STATE_POLL_INTERVAL_MS)
+}
+
+function stopStatePolling() {
+  if (statePollTimer !== undefined) {
+    window.clearInterval(statePollTimer)
+    statePollTimer = undefined
+  }
+}
+
+async function refreshState() {
+  try {
+    const response = await fetch('/monitoring/state')
+    if (!response.ok) return
+    const next = await response.json() as MonitoringState
+    const wasOn = state.value.effective_on
+    state.value = next
+    if (!wasOn && next.effective_on) {
+      await afterTurnedOn(
+        next.run_active ? 'Monitoring is running automatically for the active protocol run.' : 'Monitoring is on.',
+        'info',
+      )
+    } else if (wasOn && !next.effective_on) {
+      clearPolling()
+      setNotice('Monitoring stopped.', 'info')
+    }
+  } catch {
+    // Leave state unchanged on a transient network error — the next poll retries.
+  }
 }
 
 function appendReading(key: string, reading: MonitoringReading) {
@@ -719,14 +755,14 @@ function chartStats(variable: MonitoringVariable): string {
 }
 
 async function refreshNumericProfiles() {
-  if (!activeSessionId.value) return
+  if (!isRunning.value) return
   const numericVariables = config.value.variables
     .filter(variable => displayMode(variable) === 'numeric')
-  await Promise.all(numericVariables.map(variable => fetchProfile(variable)))
+  await Promise.all(numericVariables.map(variable => fetchHistory(variable)))
 }
 
 function onVisibilityChange() {
-  if (document.visibilityState !== 'visible' || !activeSessionId.value) return
+  if (document.visibilityState !== 'visible' || !isRunning.value) return
   void refreshNumericProfiles().then(() => pollLatest())
 }
 
@@ -737,6 +773,7 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   clearPolling()
+  stopStatePolling()
   document.removeEventListener('visibilitychange', onVisibilityChange)
 })
 </script>
@@ -754,22 +791,26 @@ onBeforeUnmount(() => {
           <span class="status-dot" aria-hidden="true"></span>
           Running
         </span>
+        <span v-if="state.recording" class="session-pill recording">
+          Recording <code>{{ state.run_id }}</code>
+        </span>
         <button
           v-if="isRunning"
           type="button"
           class="button danger"
-          :disabled="isStopping"
-          @click="stopSession"
+          :disabled="isStopping || state.run_active"
+          :title="state.run_active ? 'Running automatically for the active protocol run.' : ''"
+          @click="stopMonitoring"
         >
           <span v-if="isStopping" class="mini-spinner" aria-hidden="true"></span>
-          {{ isStopping ? 'Stopping...' : 'Stop' }}
+          {{ state.run_active ? 'Auto (run active)' : (isStopping ? 'Stopping...' : 'Stop') }}
         </button>
         <button
           v-else
           type="button"
           class="button primary"
           :disabled="!canStart"
-          @click="startSession"
+          @click="startMonitoring"
         >
           <span v-if="isStarting" class="mini-spinner" aria-hidden="true"></span>
           {{ isStarting ? 'Starting...' : 'Start' }}
@@ -780,7 +821,7 @@ onBeforeUnmount(() => {
     <section v-if="isLoadingPage" class="state-card" aria-live="polite">
       <span class="spinner" aria-hidden="true"></span>
       <h2>Loading monitoring</h2>
-      <p>Checking project, devices, config, and sessions.</p>
+      <p>Checking project, devices, config, and state.</p>
     </section>
 
     <section v-else-if="pageError" class="state-card error-state" role="alert">
@@ -798,15 +839,12 @@ onBeforeUnmount(() => {
       <section class="config-panel">
         <div class="panel-header">
           <div>
-            <h2>Session Config</h2>
-            <p v-if="activeSessionId">
-              <code>{{ activeSessionId }}</code>
+            <h2>Monitoring Config</h2>
+            <p v-if="state.run_active">
+              Running automatically for the active run<template v-if="state.run_id"> · <code>{{ state.run_id }}</code></template>
             </p>
             <p v-else>{{ config.variables.length }} selected variables</p>
           </div>
-          <span v-if="hasAnyRunningSession && !isRunning" class="session-pill warning">
-            Running elsewhere
-          </span>
         </div>
 
         <div v-if="pageNotice" class="notice" :class="pageNoticeType">
@@ -821,7 +859,7 @@ onBeforeUnmount(() => {
             v-if="canRetryStart"
             type="button"
             class="button compact"
-            :disabled="isStarting || hasAnyRunningSession"
+            :disabled="isStarting || state.run_active"
             @click="retryStart"
           >
             Retry
@@ -1386,6 +1424,11 @@ pre {
 .session-pill.warning {
   color: var(--color-warning);
   background: var(--color-warning-soft);
+}
+
+.session-pill.recording {
+  color: var(--color-primary);
+  background: color-mix(in srgb, var(--color-primary) 14%, transparent);
 }
 
 .status-dot {

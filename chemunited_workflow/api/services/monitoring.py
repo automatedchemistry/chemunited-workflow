@@ -1,4 +1,4 @@
-"""MonitoringService — standalone sensor-monitoring sessions.
+"""MonitoringService — a single, project-wide sensor-monitoring poll loop.
 
 Polling uses a throwaway ``Platform`` (a fresh read of
 ``connectivity/associations.json``, unlocked, no ``pool_json_log``) rather
@@ -8,6 +8,13 @@ pollutes its pool log. Note: none of the three client protocols currently
 has a timeout passthrough (see ``ProtocolService.send_component_command``'s
 docstring for the same caveat) — a hung device can stall a poll tick longer
 than ``request_timeout`` would suggest.
+
+There is no session concept: monitoring is a single on/off toggle per
+project. Every reading is kept in a bounded in-memory buffer (powers the
+live dashboard) and, only while a protocol run has opted in via
+``on_run_started(run_id, record=True)``, is also appended to
+``log/monitoring/{run_id}/{component}__{command}.jsonl`` for that run's
+duration.
 """
 
 from __future__ import annotations
@@ -130,59 +137,86 @@ class MonitoringService:
             json.dumps(config, indent=2, ensure_ascii=False), encoding="utf-8"
         )
 
-    # ── Sessions ─────────────────────────────────────────────────────────────
+    # ── Manual on/off ────────────────────────────────────────────────────────
 
-    def start_session(self) -> str:
+    def start(self) -> None:
+        """Turn monitoring on manually. Raises ValueError if no variables are configured.
+
+        Raises MonitoringRunActiveError if a protocol run currently has
+        monitoring forced on — checked first, so it takes precedence over a
+        config-validation error when both conditions hold, since the manual
+        endpoint isn't meaningful at all while a run controls monitoring.
+        """
+        self._store.raise_if_run_active()
         config = self.read_config()
         if not config.get("variables"):
             raise ValueError(
                 "No monitoring variables registered. PUT /monitoring/config first."
             )
-        record = self._store.create()
-        thread = threading.Thread(
-            target=self._poll_loop,
-            args=(record.session_id, config, record.stop_event),
-            daemon=True,
-        )
-        thread.start()
-        return record.session_id
+        stop_event = self._store.try_manual_start()
+        if stop_event is not None:
+            self._spawn_poll_thread(stop_event)
 
-    def stop_session(self, session_id: str) -> bool:
-        return self._store.stop(session_id)
+    def stop(self) -> None:
+        """Turn monitoring off manually.
 
-    def list_sessions(self) -> list[dict[str, Any]]:
-        return [
-            {"session_id": r.session_id, "state": r.state.value}
-            for r in self._store.list()
-        ]
+        Raises MonitoringRunActiveError (propagated from the store) if a
+        protocol run currently has monitoring forced on.
+        """
+        self._store.try_manual_stop()
 
-    def get_session(self, session_id: str) -> dict[str, Any] | None:
-        record = self._store.get(session_id)
-        if record is None:
-            return None
-        return {"session_id": record.session_id, "state": record.state.value}
+    def get_state(self) -> dict[str, Any]:
+        return self._store.snapshot()
 
-    def get_latest(self, session_id: str) -> dict[str, Any]:
-        record = self._store.get(session_id)
-        if record is None:
-            raise KeyError(f"Session '{session_id}' not found.")
-        return record.latest
+    def get_latest(self) -> dict[str, Any]:
+        return self._store.get_latest()
 
-    # ── Profile read-back ────────────────────────────────────────────────────
+    def get_history(self, component: str, command: str) -> list[dict[str, Any]]:
+        key = f"{component}::{command}"
+        return self._store.get_history(key)
 
-    def read_profile(
+    # ── Run-lifecycle hooks (called by RunnerService) ───────────────────────
+
+    def on_run_started(self, run_id: str, *, record: bool) -> None:
+        """Force monitoring on for the duration of a protocol run.
+
+        Never raises — a monitoring hiccup must never abort a protocol run.
+        """
+        try:
+            if record and not self.read_config().get("variables"):
+                logger.warning(
+                    "record_monitoring was requested for run '{}' but no "
+                    "monitoring variables are configured; nothing will be recorded.",
+                    run_id,
+                )
+            stop_event = self._store.begin_run(run_id, record)
+            if stop_event is not None:
+                self._spawn_poll_thread(stop_event)
+        except Exception:
+            logger.exception(
+                "monitoring on_run_started hook failed for run '{}'", run_id
+            )
+
+    def on_run_finished(self) -> None:
+        """Release the run-forced monitoring state. Never raises."""
+        try:
+            self._store.end_run()
+        except Exception:
+            logger.exception("monitoring on_run_finished hook failed")
+
+    # ── Recording read-back ──────────────────────────────────────────────────
+
+    def read_recording(
         self,
-        session_id: str,
+        run_id: str,
         component: str,
         command: str,
         tail: int | None = None,
     ) -> list[dict[str, Any]]:
-        path = self._session_dir(session_id) / self._variable_filename(
-            component, command
-        )
+        path = self._run_dir(run_id) / self._variable_filename(component, command)
         if not path.exists():
             raise FileNotFoundError(
-                f"No profile for '{component}'/'{command}' in session '{session_id}'."
+                f"No recording for '{component}'/'{command}' in run '{run_id}'."
             )
         lines = path.read_text(encoding="utf-8").splitlines()
         if tail is not None:
@@ -191,18 +225,20 @@ class MonitoringService:
 
     # ── Polling loop ─────────────────────────────────────────────────────────
 
-    def _poll_loop(
-        self,
-        session_id: str,
-        config: dict[str, Any],
-        stop_event: threading.Event,
-    ) -> None:
+    def _spawn_poll_thread(self, stop_event: threading.Event) -> None:
+        thread = threading.Thread(
+            target=self._poll_loop,
+            args=(stop_event,),
+            daemon=True,
+        )
+        thread.start()
+
+    def _poll_loop(self, stop_event: threading.Event) -> None:
+        config = self.read_config()
         sample_time = float(config["sample_time"])
         variables: list[dict[str, Any]] = config["variables"]
-        session_dir = self._session_dir(session_id)
-        session_dir.mkdir(parents=True, exist_ok=True)
 
-        # One throwaway Platform for the whole session (not per tick) — reconnecting
+        # One throwaway Platform for the whole ON-cycle (not per tick) — reconnecting
         # a gRPC/OPC UA session every `sample_time` seconds would be wasteful. Variables
         # are grouped by component so each component's one shared client is only ever
         # touched by one pool worker at a time: sharing it across per-variable workers
@@ -221,6 +257,15 @@ class MonitoringService:
             ) as pool:
                 while not stop_event.is_set():
                     tick_start = time.monotonic()
+
+                    # Re-derived every tick: a single ON-cycle (this thread) can span
+                    # multiple recording windows — manual-on, then a run starts and
+                    # recording begins under one run_id, then the run ends but the
+                    # loop keeps going because manual_on was already true, then a
+                    # later run starts recording again under a different run_id.
+                    recording, run_id = self._store.poll_context()
+                    run_dir = self._run_dir(run_id) if recording and run_id else None
+
                     futures = {
                         pool.submit(self._fetch_group, platform, component, group_vars)
                         for component, group_vars in groups.items()
@@ -228,11 +273,12 @@ class MonitoringService:
                     for future in futures:
                         for var, reading in future.result():
                             reading["tick"] = tick
-                            self._write_reading(
-                                session_dir, var["component"], var["command"], reading
-                            )
                             key = f"{var['component']}::{var['command']}"
-                            self._store.update_latest(session_id, key, reading)
+                            self._store.record_reading(key, reading)
+                            if run_dir is not None:
+                                self._write_reading(
+                                    run_dir, var["component"], var["command"], reading
+                                )
                     tick += 1
                     remaining = sample_time - (time.monotonic() - tick_start)
                     if remaining > 0:
@@ -240,7 +286,6 @@ class MonitoringService:
         finally:
             for component, client in platform.items():
                 _safe_close(client, component)
-            self._store.set_stopped(session_id)
 
     def _fetch_group(
         self,
@@ -300,8 +345,8 @@ class MonitoringService:
 
     # ── Helpers ──────────────────────────────────────────────────────────────
 
-    def _session_dir(self, session_id: str) -> Path:
-        return self._project_dir / "log" / "monitoring" / session_id
+    def _run_dir(self, run_id: str) -> Path:
+        return self._project_dir / "log" / "monitoring" / run_id
 
     @staticmethod
     def _variable_filename(component: str, command: str) -> str:
@@ -309,9 +354,10 @@ class MonitoringService:
         return f"{component}__{safe_command}.jsonl"
 
     def _write_reading(
-        self, session_dir: Path, component: str, command: str, reading: dict[str, Any]
+        self, run_dir: Path, component: str, command: str, reading: dict[str, Any]
     ) -> None:
-        path = session_dir / self._variable_filename(component, command)
+        run_dir.mkdir(parents=True, exist_ok=True)
+        path = run_dir / self._variable_filename(component, command)
         with path.open("a", encoding="utf-8") as fh:
             fh.write(json.dumps(reading) + "\n")
 

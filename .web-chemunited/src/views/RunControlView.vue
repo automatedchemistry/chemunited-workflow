@@ -281,6 +281,7 @@ async function startRun() {
         dry_run: store.formDryRun,
         timeout_commands: store.formTimeout.trim(),
         error_resilient: store.formErrorResilient,
+        record_monitoring: store.formRecordMonitoring,
       }),
     })
 
@@ -493,6 +494,20 @@ onUnmounted(() => {
                 <span class="toggle-title">Error-resilient mode</span>
                 <span class="field-help">
                   Log device errors and allow independent workflow branches to continue.
+                </span>
+              </span>
+            </label>
+            <label class="toggle-row" for="record-monitoring-check">
+              <input
+                id="record-monitoring-check"
+                v-model="store.formRecordMonitoring"
+                type="checkbox"
+                :disabled="isActive"
+              />
+              <span>
+                <span class="toggle-title">Record monitoring data</span>
+                <span class="field-help">
+                  Save every monitored variable reading for this run to log/monitoring/&lt;run_id&gt;/.
                 </span>
               </span>
             </label>

@@ -1,12 +1,7 @@
 {
-  "sample_time": 3.0,
+  "sample_time": 5.0,
   "request_timeout": 5.0,
   "variables": [
-    {
-      "component": "pt100",
-      "command": "temperature",
-      "kwargs": {}
-    },
     {
       "component": "chiller",
       "command": "temperature",

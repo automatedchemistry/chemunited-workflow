@@ -55,13 +55,20 @@ async def start_run(
     immediately (HTTP 202 Accepted). Returns HTTP 409 if a run is already active
     — stop the current run first. Pass `dry_run: true` to suppress all HTTP calls
     to physical devices. `timeout_commands` controls feedback polling timeout.
+    Pass `record_monitoring: true` to persist every monitored variable's
+    readings for this run to `log/monitoring/{run_id}/` — returns HTTP 422
+    if no monitoring variables are registered, and the run never starts.
     """
-    run_id = svc.start(
-        body.protocol,
-        dry_run=body.dry_run,
-        timeout_commands=body.timeout_commands,
-        error_resilient=body.error_resilient,
-    )
+    try:
+        run_id = svc.start(
+            body.protocol,
+            dry_run=body.dry_run,
+            timeout_commands=body.timeout_commands,
+            error_resilient=body.error_resilient,
+            record_monitoring=body.record_monitoring,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
     if run_id is None:
         raise HTTPException(
             status_code=409,

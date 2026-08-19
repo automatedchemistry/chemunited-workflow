@@ -12,6 +12,7 @@ import responses as resp_lib
 
 from chemunited_workflow.api.monitoring_store import MonitoringStore
 from chemunited_workflow.api.services.monitoring import MonitoringService
+from chemunited_workflow.exceptions import MonitoringRunActiveError
 from chemunited_workflow.platform import Platform
 
 _MODULE = "chemunited_workflow.api.services.monitoring.requests"
@@ -280,12 +281,12 @@ def test_fetch_one_sila2_device_error(mocker, svc, platform):
     assert "offline" in reading["error"]
 
 
-# ── sessions ─────────────────────────────────────────────────────────────────
+# ── manual on/off ────────────────────────────────────────────────────────────
 
 
-def test_start_session_without_variables_raises(svc):
+def test_start_without_variables_raises(svc):
     with pytest.raises(ValueError):
-        svc.start_session()
+        svc.start()
 
 
 def _wait_until(predicate, timeout=2.0, interval=0.02):
@@ -298,7 +299,7 @@ def _wait_until(predicate, timeout=2.0, interval=0.02):
 
 
 @resp_lib.activate
-def test_session_polls_writes_jsonl_and_updates_latest(svc):
+def test_manual_start_polls_updates_state_without_writing_files(svc, tmp_path):
     resp_lib.add(
         resp_lib.GET, "http://device-server:8000/sim/pump/value", json=42.0, status=200
     )
@@ -309,23 +310,21 @@ def test_session_polls_writes_jsonl_and_updates_latest(svc):
             "variables": [{"component": "pump", "command": "value", "kwargs": {}}],
         }
     )
-    session_id = svc.start_session()
-    assert _wait_until(lambda: svc.get_latest(session_id) != {})
-    svc.stop_session(session_id)
+    svc.start()
+    assert _wait_until(lambda: svc.get_latest() != {})
+    svc.stop()
 
-    latest = svc.get_latest(session_id)
+    latest = svc.get_latest()
     assert latest["pump::value"]["value"] == 42.0
+    history = svc.get_history("pump", "value")
+    assert history[-1]["value"] == 42.0
 
-    # _write_reading runs before update_latest within the same tick, so the
-    # JSONL file is guaranteed to exist once the latest cache is populated.
-    profile = svc.read_profile(session_id, "pump", "value")
-    assert len(profile) >= 1
-    assert profile[0]["value"] == 42.0
-    assert profile[0]["error"] is None
+    # Manual-only monitoring must never touch disk — only a recorded run does.
+    assert not (tmp_path / "log" / "monitoring").exists()
 
 
 @resp_lib.activate
-def test_session_one_device_failing_does_not_block_other(svc):
+def test_one_device_failing_does_not_block_other(svc):
     resp_lib.add(
         resp_lib.GET,
         "http://device-server:8000/sim/pump/value",
@@ -347,14 +346,14 @@ def test_session_one_device_failing_does_not_block_other(svc):
             ],
         }
     )
-    session_id = svc.start_session()
+    svc.start()
     assert _wait_until(
-        lambda: "pump::value" in svc.get_latest(session_id)
-        and "valve::position" in svc.get_latest(session_id)
+        lambda: "pump::value" in svc.get_latest()
+        and "valve::position" in svc.get_latest()
     )
-    svc.stop_session(session_id)
+    svc.stop()
 
-    latest = svc.get_latest(session_id)
+    latest = svc.get_latest()
     assert latest["pump::value"]["error"] is not None
     assert latest["pump::value"]["value"] is None
     assert latest["valve::position"]["error"] is None
@@ -362,7 +361,7 @@ def test_session_one_device_failing_does_not_block_other(svc):
 
 
 @resp_lib.activate
-def test_session_two_variables_same_component_poll_sequentially(svc):
+def test_two_variables_same_component_poll_sequentially(svc):
     """Two monitored variables on the same component must share one client and
     never be dispatched to two pool workers in the same tick — that would trip
     ComponentClient's non-blocking per-device lock (ConcurrentClientAccessError),
@@ -383,14 +382,13 @@ def test_session_two_variables_same_component_poll_sequentially(svc):
             ],
         }
     )
-    session_id = svc.start_session()
+    svc.start()
     assert _wait_until(
-        lambda: "pump::value" in svc.get_latest(session_id)
-        and "pump::rate" in svc.get_latest(session_id)
+        lambda: "pump::value" in svc.get_latest() and "pump::rate" in svc.get_latest()
     )
-    svc.stop_session(session_id)
+    svc.stop()
 
-    latest = svc.get_latest(session_id)
+    latest = svc.get_latest()
     assert latest["pump::value"]["error"] is None
     assert latest["pump::value"]["value"] == 1.0
     assert latest["pump::rate"]["error"] is None
@@ -398,7 +396,7 @@ def test_session_two_variables_same_component_poll_sequentially(svc):
 
 
 @resp_lib.activate
-def test_session_closes_each_client_once_not_per_tick(svc, mocker):
+def test_manual_toggle_closes_each_client_once_not_per_tick(svc, mocker):
     resp_lib.add(
         resp_lib.GET, "http://device-server:8000/sim/pump/value", json=1.0, status=200
     )
@@ -409,14 +407,14 @@ def test_session_closes_each_client_once_not_per_tick(svc, mocker):
             "variables": [{"component": "pump", "command": "value", "kwargs": {}}],
         }
     )
-    session_id = svc.start_session()
+    svc.start()
     # let several ticks elapse
-    assert _wait_until(lambda: svc.get_latest(session_id) != {})
+    assert _wait_until(lambda: svc.get_latest() != {})
     time.sleep(0.15)
-    svc.stop_session(session_id)
-    # stop_session() marks the session "stopped" synchronously, before the background
-    # thread actually exits its loop and runs cleanup — wait for the real signal
-    # (close() firing) instead of the session state.
+    svc.stop()
+    # stop() clears manual_on synchronously, before the background thread
+    # actually exits its loop and runs cleanup — wait for the real signal
+    # (close() firing) instead of the state flag.
     assert _wait_until(lambda: close_spy.call_count >= 2)
 
     # Once per registered flowchem component (pump + valve; sila-pump/opc-valve use
@@ -424,41 +422,155 @@ def test_session_closes_each_client_once_not_per_tick(svc, mocker):
     assert close_spy.call_count == 2
 
 
-def test_stop_session_unknown_returns_false(svc):
-    assert svc.stop_session("no-such-id") is False
+def test_start_raises_while_run_active(svc):
+    svc.on_run_started("run-1", record=False)
+    with pytest.raises(MonitoringRunActiveError):
+        svc.start()
+    svc.on_run_finished()
 
 
-def test_list_and_get_session(svc):
+@resp_lib.activate
+def test_stop_raises_while_run_active(svc):
+    resp_lib.add(
+        resp_lib.GET, "http://device-server:8000/sim/pump/value", json=1.0, status=200
+    )
     svc.write_config(
         {
             "sample_time": 1.0,
-            "request_timeout": 1.0,
-            "variables": [{"component": "pump", "command": "value"}],
+            "variables": [{"component": "pump", "command": "value", "kwargs": {}}],
         }
     )
-    with patch(
-        f"{_MODULE}.get",
-        return_value=MagicMock(
-            raise_for_status=MagicMock(), json=MagicMock(return_value=1)
-        ),
-    ):
-        session_id = svc.start_session()
-        svc.stop_session(session_id)
-
-    sessions = svc.list_sessions()
-    assert any(s["session_id"] == session_id for s in sessions)
-    assert svc.get_session(session_id)["session_id"] == session_id
-    assert svc.get_session("no-such-id") is None
+    svc.start()
+    svc.on_run_started("run-1", record=False)
+    with pytest.raises(MonitoringRunActiveError):
+        svc.stop()
+    svc.on_run_finished()
+    svc.stop()
 
 
-# ── read_profile / get_latest ────────────────────────────────────────────────
+# ── run-lifecycle hooks ──────────────────────────────────────────────────────
 
 
-def test_read_profile_missing_raises(svc):
+@resp_lib.activate
+def test_on_run_started_forces_on_and_writes_recording(svc, tmp_path):
+    resp_lib.add(
+        resp_lib.GET, "http://device-server:8000/sim/pump/value", json=7.0, status=200
+    )
+    svc.write_config(
+        {
+            "sample_time": 0.05,
+            "variables": [{"component": "pump", "command": "value", "kwargs": {}}],
+        }
+    )
+    svc.on_run_started("run-1", record=True)
+    assert svc.get_state()["run_active"] is True
+    assert svc.get_state()["recording"] is True
+
+    run_dir = tmp_path / "log" / "monitoring" / "run-1"
+    assert _wait_until(lambda: run_dir.exists() and any(run_dir.iterdir()))
+    svc.on_run_finished()
+
+    recording = svc.read_recording("run-1", "pump", "value")
+    assert recording[0]["value"] == 7.0
+
+
+@resp_lib.activate
+def test_non_recorded_run_writes_no_files(svc, tmp_path):
+    resp_lib.add(
+        resp_lib.GET, "http://device-server:8000/sim/pump/value", json=7.0, status=200
+    )
+    svc.write_config(
+        {
+            "sample_time": 0.02,
+            "variables": [{"component": "pump", "command": "value", "kwargs": {}}],
+        }
+    )
+    svc.on_run_started("run-1", record=False)
+    assert _wait_until(lambda: svc.get_latest() != {})
+    time.sleep(0.1)
+    svc.on_run_finished()
+
+    assert not (tmp_path / "log" / "monitoring").exists()
+
+
+@resp_lib.activate
+def test_on_run_started_when_already_manual_on_reuses_existing_thread(svc, mocker):
+    resp_lib.add(
+        resp_lib.GET, "http://device-server:8000/sim/pump/value", json=1.0, status=200
+    )
+    close_spy = mocker.patch("chemunited_workflow.clients.http.BaseClient.close")
+    svc.write_config(
+        {
+            "sample_time": 0.02,
+            "variables": [{"component": "pump", "command": "value", "kwargs": {}}],
+        }
+    )
+    svc.start()
+    assert _wait_until(lambda: svc.get_latest() != {})
+
+    svc.on_run_started("run-1", record=True)
+    assert svc.get_state()["recording"] is True
+    time.sleep(0.1)
+    svc.on_run_finished()
+    # manual_on was already true, so ending the run must not stop the loop.
+    assert svc.get_state()["effective_on"] is True
+    svc.stop()
+
+    assert _wait_until(lambda: close_spy.call_count >= 2)
+    # Once per registered flowchem component (pump + valve; sila-pump/opc-valve
+    # use a different client class) from the single platform teardown — if a
+    # second thread had been spawned for the run, this would double to 4.
+    assert close_spy.call_count == 2
+
+
+@resp_lib.activate
+def test_on_run_finished_stops_loop_when_manual_was_off(svc, mocker):
+    resp_lib.add(
+        resp_lib.GET, "http://device-server:8000/sim/pump/value", json=1.0, status=200
+    )
+    close_spy = mocker.patch("chemunited_workflow.clients.http.BaseClient.close")
+    svc.write_config(
+        {
+            "sample_time": 0.02,
+            "variables": [{"component": "pump", "command": "value", "kwargs": {}}],
+        }
+    )
+    svc.on_run_started("run-1", record=False)
+    assert _wait_until(lambda: svc.get_latest() != {})
+    svc.on_run_finished()
+
+    assert svc.get_state()["effective_on"] is False
+    assert _wait_until(lambda: close_spy.call_count >= 1)
+
+
+def test_on_run_started_record_true_with_no_variables_warns_without_raising(
+    svc, tmp_path
+):
+    svc.on_run_started("run-1", record=True)  # must not raise
+    time.sleep(0.05)
+    svc.on_run_finished()
+    assert not (tmp_path / "log" / "monitoring" / "run-1").exists()
+
+
+def test_on_run_started_and_finished_never_raise_on_internal_error(svc):
+    # Simulate a broken config file — on_run_started must swallow the error.
+    svc._config_path.parent.mkdir(parents=True, exist_ok=True)
+    svc._config_path.write_text("not json", encoding="utf-8")
+    svc.on_run_started("run-1", record=True)  # must not raise
+    svc.on_run_finished()  # must not raise
+
+
+# ── read_recording / get_latest / get_history ───────────────────────────────
+
+
+def test_read_recording_missing_raises(svc):
     with pytest.raises(FileNotFoundError):
-        svc.read_profile("no-such-session", "pump", "value")
+        svc.read_recording("no-such-run", "pump", "value")
 
 
-def test_get_latest_unknown_session_raises(svc):
-    with pytest.raises(KeyError):
-        svc.get_latest("no-such-session")
+def test_get_latest_starts_empty(svc):
+    assert svc.get_latest() == {}
+
+
+def test_get_history_unknown_variable_returns_empty_list(svc):
+    assert svc.get_history("pump", "value") == []
