@@ -235,38 +235,6 @@ def test_delete_protocol_file_gone_after_call(svc, tmp_path):
     assert not snap.exists()
 
 
-# ── archive_log ───────────────────────────────────────────────────────────────
-
-
-def test_archive_log_existing(svc, tmp_path):
-    (tmp_path / "log" / "run.log").write_text("log content", encoding="utf-8")
-    result = svc.archive_log("run.log")
-    assert result == "archive/run.log"
-
-
-def test_archive_log_missing(svc):
-    with pytest.raises(FileNotFoundError):
-        svc.archive_log("missing.log")
-
-
-def test_archive_log_source_gone(svc, tmp_path):
-    log = tmp_path / "log" / "run2.log"
-    log.write_text("content", encoding="utf-8")
-    svc.archive_log("run2.log")
-    assert not log.exists()
-
-
-def test_archive_log_destination_exists(svc, tmp_path):
-    (tmp_path / "log" / "run3.log").write_text("content", encoding="utf-8")
-    svc.archive_log("run3.log")
-    assert (tmp_path / "log" / "archive" / "run3.log").exists()
-
-
-def test_archive_log_return_value(svc, tmp_path):
-    (tmp_path / "log" / "run4.log").write_text("content", encoding="utf-8")
-    assert svc.archive_log("run4.log") == "archive/run4.log"
-
-
 # ── search_logs ───────────────────────────────────────────────────────────────
 
 

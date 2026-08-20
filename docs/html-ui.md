@@ -12,6 +12,7 @@ When the FastAPI server is running, open `http://127.0.0.1:3116/` to access the 
 | Monitoring | `/monitoring` | Live sensor monitoring sessions and time-series profiles |
 | Devices | `/devices` | Component connectivity map and ping check |
 | Logs | `/logs` | Browse and tail log files |
+| Export | `/export` | Download a zip of logs/monitoring/protocol history, and clean the source files out of the project |
 
 Every route above is served by the same `index.html` (see `chemunited_workflow/api/routers/ui.py`); Vue Router handles client-side navigation between pages, and Pinia (`stores/runStatus.ts`) tracks shared run state across them.
 
@@ -52,7 +53,7 @@ A project can supply its own pre-built dashboard and the server will prefer it o
 
 Resolution happens per request, driven by whatever project is currently loaded (via `chemunited-workflow serve <project_dir>` or `PUT /project/`):
 
-- `GET /`, `/run-control`, `/protocols`, `/monitoring`, `/devices`, `/logs` serve `{project_dir}/customizations/ui/dist/index.html` if it exists, otherwise the bundled `chemunited_workflow/web/index.html`.
+- `GET /`, `/run-control`, `/protocols`, `/monitoring`, `/devices`, `/logs`, `/export` serve `{project_dir}/customizations/ui/dist/index.html` if it exists, otherwise the bundled `chemunited_workflow/web/index.html`.
 - `GET /assets/{filename}` looks in `{project_dir}/customizations/ui/dist/assets/` first, then falls back to the package's own `assets/`.
 
 Your build must emit **root-absolute** asset URLs (`/assets/xyz.js`, not `./assets/xyz.js`) — this is Vite's default (no custom `base`), which is exactly what `.web-chemunited` itself uses, so pointing any Vite project's `outDir` at `{project_dir}/customizations/ui/dist` works with no extra config. Other bundlers work too as long as they emit the same root-absolute convention.
@@ -60,7 +61,7 @@ Your build must emit **root-absolute** asset URLs (`/assets/xyz.js`, not `./asse
 Two limitations to be aware of:
 
 - The dashboard favicon (`/chemunited.ico`) always comes from the package — it isn't overridable.
-- Only the six page paths above are server-routed. A custom SPA should reuse those route names for anything that needs to survive a hard refresh or direct link; client-side navigation (`RouterLink`/`<a>` clicks handled by your app's router) works for any route without a server-side match.
+- Only the seven page paths above are server-routed. A custom SPA should reuse those route names for anything that needs to survive a hard refresh or direct link; client-side navigation (`RouterLink`/`<a>` clicks handled by your app's router) works for any route without a server-side match.
 
 ## Modifying the bundled UI
 

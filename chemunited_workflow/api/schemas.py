@@ -218,3 +218,30 @@ class MonitoringReading(BaseModel):
     time: str
     value: Any | None = None
     error: str | None = None
+
+
+class ExportEntry(BaseModel):
+    filename: str
+    size_bytes: int
+    modified: str
+
+
+class ExportMonitoringGroup(BaseModel):
+    run_id: str
+    files: list[ExportEntry]
+    total_size_bytes: int
+
+
+class ExportRow(BaseModel):
+    log: ExportEntry
+    monitoring: ExportMonitoringGroup | None = None
+    protocol: ExportEntry | None = None
+
+
+class ExportCleanRequest(BaseModel):
+    logs: list[str] = Field(min_length=1)
+
+
+class ExportCleanResult(BaseModel):
+    deleted: list[str]
+    count: int

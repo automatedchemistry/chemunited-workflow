@@ -68,7 +68,6 @@ When running with `--with-mcp` (MCP streamable-HTTP endpoint embedded in the Fas
 | `list_logs` | List log files, most recent first. |
 | `read_log` | Read a log file's text content. |
 | `search_logs` | Search log files for a query string (case-insensitive). |
-| `archive_log` | Move a log file to `log/archive/`. |
 
 ---
 

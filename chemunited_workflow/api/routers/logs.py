@@ -29,19 +29,6 @@ async def search_logs(
     return svc.search_logs(query, max_results=max_results)
 
 
-@router.post("/{filename}/archive", status_code=200)
-async def archive_log(
-    filename: str,
-    svc: ProtocolService = Depends(get_protocol_service),
-):
-    """Move a log file from ``log/`` to ``log/archive/``."""
-    try:
-        archived_path = svc.archive_log(filename)
-        return {"archived": archived_path}
-    except FileNotFoundError as exc:
-        raise HTTPException(status_code=404, detail=str(exc))
-
-
 @router.get("/{filename}")
 async def read_log(
     filename: str,

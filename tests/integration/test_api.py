@@ -772,21 +772,6 @@ def test_search_logs_max_results(client):
     assert len(r.json()) == 1
 
 
-# ── /logs/{filename}/archive ──────────────────────────────────────────────────
-
-
-def test_archive_existing_log(client, project):
-    r = client.post("/logs/app.log/archive")
-    assert r.status_code == 200
-    assert "archived" in r.json()
-    assert not (project["dirs"]["log_dir"] / "app.log").exists()
-
-
-def test_archive_missing_log(client):
-    r = client.post("/logs/missing.log/archive")
-    assert r.status_code == 404
-
-
 # ── /components/ping ─────────────────────────────────────────────────────────
 
 

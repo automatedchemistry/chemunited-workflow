@@ -10,6 +10,7 @@ from .dependencies import get_project_holder
 from .project_holder import ProjectHolder
 from .routers.components import router as components_router
 from .routers.custom import router as custom_router
+from .routers.export import router as export_router
 from .routers.logs import router as logs_router
 from .routers.monitoring import router as monitoring_router
 from .routers.processes import router as processes_router
@@ -75,6 +76,7 @@ def create_api(
     app.include_router(logs_router)
     app.include_router(monitoring_router)
     app.include_router(custom_router)
+    app.include_router(export_router)
 
     if mcp_sub_app is not None:
         app.mount("/mcp", mcp_sub_app)

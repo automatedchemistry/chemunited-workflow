@@ -108,7 +108,6 @@ To render live per-node feedback (progress bar + message), group events by `node
 | `GET` | `/logs/` | List log file metadata, sorted most recent first |
 | `GET` | `/logs/search?query=...&max_results=50` | Search all active log files for matching lines, case-insensitive |
 | `GET` | `/logs/{filename}?tail=N` | Read a log file. `tail` is optional and returns only the last `N` lines. |
-| `POST` | `/logs/{filename}/archive` | Move a log to `log/archive/` |
 
 ## Components
 
@@ -204,6 +203,44 @@ curl http://127.0.0.1:3116/monitoring/recordings/suzuki_batch_2026-01-15T09-30-0
 ```
 
 Each variable is polled concurrently using its own per-request timeout, so a hung device only delays its own reading. Recorded readings are stored as JSONL with one entry per tick: `{"tick": 0, "time": "...", "value": ..., "error": null}`.
+
+## Export
+
+One row per executed run — the run's log file, its correlated monitoring recording (if any), and its source protocol (if it still exists) — that can be zipped up for download and/or permanently cleaned out of the project. Downloading and cleaning are two separate actions; downloading never deletes anything.
+
+Rows are correlated purely by filename convention (there is no stored link): a log is written as `{protocol_stem}_executed_{timestamp}.log`, its monitoring recording lives at `log/monitoring/{protocol_stem}_{timestamp}/`, and its source protocol is `protocols_historic/{protocol_stem}.json`. A row only exists if its log file exists — a saved-but-never-run protocol produces no row, and a monitoring recording whose log was removed some other way is not shown. Because the same protocol can be run more than once, **the log filename is each row's identity**, not the protocol name.
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/export/preview` | List every row: `{"log": {...}, "monitoring": {"run_id", "files": [...], "total_size_bytes"} \| null, "protocol": {...} \| null}`, most recently modified log first. |
+| `GET` | `/export/download?log={filename}` | Zip the selected runs (repeat `log` for more than one) and return it as a file download (`Content-Disposition: attachment`). Never deletes anything. `422` if no `log` is given. |
+| `POST` | `/export/clean` | Body `{"logs": ["{filename}", ...]}`. Permanently delete the selected runs' log files and monitoring recordings. Returns `{"deleted": [...], "count": N}`. `protocols_historic/` is never touched — a run's protocol is always copied into its export, never removed by clean. `422` if `logs` is empty. |
+
+A zip's members are `log/{filename}`, `log/monitoring/{run_id}/{filename}`, and `protocols_historic/{filename}`. Selecting two runs of the same protocol writes that protocol file into the zip only once. An unknown or already-deleted filename passed to `download`/`clean` is skipped silently rather than erroring the whole request.
+
+### Custom export behavior
+
+The same extensibility shape as [custom routes](#custom-routes): an optional `{project_dir}/customizations/export/export_hook.py` can override `build_zip` and/or `clean` independently, via an `EXPORT_HOOKS` dict. Each hook receives the same selected log filenames the endpoint was called with:
+
+```python
+# customizations/export/export_hook.py
+from pathlib import Path
+
+def build_zip(project_dir: Path, logs: list[str]) -> bytes:
+    ...  # build and return your own zip bytes for the selected runs
+
+def clean(project_dir: Path, logs: list[str]) -> dict:
+    ...  # delete whatever you like for the selected runs, return {"deleted": [...], "count": N}
+
+EXPORT_HOOKS = {
+    "build_zip": build_zip,  # optional — omit to keep the default zip contents
+    "clean": clean,          # optional — omit to keep the default clean behavior
+}
+```
+
+The file is optional and reloaded fresh on every call. A missing file or one that fails to import (or doesn't export an `EXPORT_HOOKS` dict) falls back to the default behavior for both actions — a broken hook file never breaks `/export/preview`, `/export/download`, or `/export/clean`. Once a hook function is found and called, though, its own exception is *not* swallowed — it comes back as HTTP `500`, so a buggy custom `clean()` never silently reports success (or silently falls back to deleting a different set of files than the one it promised).
+
+See `examples/custom_project/customizations/export/` for a full working example.
 
 ## Custom routes
 

@@ -353,20 +353,6 @@ def register_tools(mcp: FastMCP, holder: ProjectHolder) -> None:
             return [{"error": _NO_PROJECT}]
         return _protocol(holder).search_logs(query, max_results=max_results)
 
-    @mcp.tool()
-    def archive_log(filename: str) -> dict:
-        """Move a log file from ``log/`` into ``log/archive/``.
-
-        Use ``list_logs`` to discover available filenames.
-        """
-        if not holder.is_loaded():
-            return {"error": _NO_PROJECT}
-        try:
-            archived_path = _protocol(holder).archive_log(filename)
-            return {"archived": archived_path}
-        except FileNotFoundError as exc:
-            return {"error": str(exc)}
-
     # ── Run control (additional) ──────────────────────────────────────────────
 
     @mcp.tool()

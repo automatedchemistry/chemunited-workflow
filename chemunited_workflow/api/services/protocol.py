@@ -227,16 +227,6 @@ class ProtocolService:
             )
         ]
 
-    def archive_log(self, filename: str) -> str:
-        source = self._log_dir / filename
-        if not source.exists():
-            raise FileNotFoundError(f"Log '{filename}' not found.")
-        archive_dir = self._log_dir / "archive"
-        archive_dir.mkdir(exist_ok=True)
-        destination = archive_dir / filename
-        source.rename(destination)
-        return f"archive/{filename}"
-
     def search_logs(self, query: str, max_results: int = 50) -> list[dict[str, Any]]:
         results: list[dict[str, Any]] = []
         query_lower = query.lower()

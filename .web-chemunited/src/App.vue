@@ -120,6 +120,7 @@ const navItems = [
   { to: '/monitoring', label: 'Monitoring', icon: 'monitoring' },
   { to: '/devices', label: 'Devices', icon: 'devices' },
   { to: '/logs', label: 'Logs', icon: 'logs' },
+  { to: '/export', label: 'Export', icon: 'export' },
 ]
 
 </script>
@@ -165,6 +166,10 @@ const navItems = [
           <svg v-else-if="item.icon === 'devices'" viewBox="0 0 24 24" fill="none" aria-hidden="true">
             <path d="M7 7h10v10H7z"/>
             <path d="M4 10H2M4 14H2M22 10h-2M22 14h-2M10 4V2M14 4V2M10 22v-2M14 22v-2"/>
+          </svg>
+          <svg v-else-if="item.icon === 'export'" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path d="M12 3v12m0 0-4-4m4 4 4-4"/>
+            <path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/>
           </svg>
           <svg v-else viewBox="0 0 24 24" fill="none" aria-hidden="true">
             <path d="M6 3h12a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Z"/>
@@ -589,7 +594,7 @@ const navItems = [
   .primary-nav {
     min-width: 0;
     display: grid;
-    grid-template-columns: repeat(6, minmax(40px, 1fr));
+    grid-template-columns: repeat(7, minmax(40px, 1fr));
     gap: 0.15rem;
   }
 

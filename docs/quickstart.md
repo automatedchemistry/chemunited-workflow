@@ -78,7 +78,6 @@ my_project/
 │   └── associations.json        # Device URL mapping
 ├── protocols_historic/          # Versioned protocol files
 ├── log/                         # Execution logs
-│   ├── archive/                 # Archived logs (populated by archive_log)
 │   └── monitoring/              # Monitoring session profiles (one sub-dir per session_id)
 └── ui/                          # Optional — custom UI templates (see Customising the UI)
     ├── templates/
