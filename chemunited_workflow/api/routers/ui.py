@@ -19,6 +19,10 @@ router = APIRouter(include_in_schema=False)
 _WEB_DIR = Path(__file__).parent.parent.parent / "web"
 _WEB_INDEX = _WEB_DIR / "index.html"
 
+# Which index.html gets served (bundled vs. per-project override) depends on
+# runtime state, so the response must never be cached by the browser.
+_NO_STORE_HEADERS = {"Cache-Control": "no-store"}
+
 
 def _safe_join(base: Path, filename: str) -> Path | None:
     """Resolve *filename* under *base*, or None if it would escape it."""
@@ -44,7 +48,7 @@ def _resolve_index(holder: ProjectHolder) -> Path:
 async def dashboard(
     holder: ProjectHolder = Depends(get_project_holder),
 ) -> FileResponse:
-    return FileResponse(_resolve_index(holder))
+    return FileResponse(_resolve_index(holder), headers=_NO_STORE_HEADERS)
 
 
 @router.get("/run-control")
@@ -55,7 +59,7 @@ async def dashboard(
 async def vue_page(
     holder: ProjectHolder = Depends(get_project_holder),
 ) -> FileResponse:
-    return FileResponse(_resolve_index(holder))
+    return FileResponse(_resolve_index(holder), headers=_NO_STORE_HEADERS)
 
 
 @router.get("/assets/{filename:path}")
