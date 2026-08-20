@@ -8,6 +8,10 @@ from pathlib import Path
 from mcp.server.fastmcp import FastMCP
 
 from chemunited_workflow.api.project_holder import ProjectHolder
+from chemunited_workflow.api.services.custom_routes import (
+    call_custom_route as _call_custom_route,
+    discover_custom_routes as _discover_custom_routes,
+)
 from chemunited_workflow.api.services.monitoring import MonitoringService
 from chemunited_workflow.api.services.protocol import ProtocolService
 from chemunited_workflow.api.services.runner import RunnerService
@@ -44,6 +48,15 @@ def _monitoring(holder: ProjectHolder) -> MonitoringService:
             "monitoring_service is None — call is_loaded() before _monitoring()"
         )
     return svc
+
+
+def _project_dir(holder: ProjectHolder) -> Path:
+    pd = holder.project_dir
+    if pd is None:
+        raise RuntimeError(
+            "project_dir is None — call is_loaded() before _project_dir()"
+        )
+    return pd
 
 
 def register_tools(mcp: FastMCP, holder: ProjectHolder) -> None:
@@ -600,3 +613,40 @@ def register_tools(mcp: FastMCP, holder: ProjectHolder) -> None:
             )
         except FileNotFoundError as exc:
             return [{"error": str(exc)}]
+
+    # ── Custom routes ────────────────────────────────────────────────────────
+
+    @mcp.tool()
+    def discover_custom_routes() -> list[dict]:
+        """List the custom routes registered in this project's
+        customizations/routers/router_hook.py, with parameter hints
+        introspected from each function's signature. Call this before
+        call_custom_route to see what's registered and what parameters it
+        expects.
+        """
+        if not holder.is_loaded():
+            return [{"error": _NO_PROJECT}]
+        return _discover_custom_routes(_project_dir(holder))
+
+    @mcp.tool()
+    def call_custom_route(name: str, kwargs: dict | None = None) -> dict:
+        """Call a registered custom route by name with keyword arguments.
+
+        Routes are project-defined and may have side effects (e.g. driving
+        equipment) — check discover_custom_routes() first. Returns 'ok:
+        false' with 'error' set if the registered function itself raises;
+        raises are never treated as a failed call.
+
+        Parameters
+        ----------
+        name:
+            Registered route name, from discover_custom_routes().
+        kwargs:
+            Keyword arguments passed to the registered function.
+        """
+        if not holder.is_loaded():
+            return {"error": _NO_PROJECT}
+        try:
+            return _call_custom_route(_project_dir(holder), name, kwargs or {})
+        except KeyError as exc:
+            return {"error": str(exc)}

@@ -143,6 +143,25 @@ class ComponentCommandResult(BaseModel):
     error: str | None = None
 
 
+class CustomRouteParameter(BaseModel):
+    name: str
+    required: bool
+    default: Any | None = None
+
+
+class CustomRouteInfo(BaseModel):
+    name: str
+    parameters: list[CustomRouteParameter]
+
+
+class CustomRouteResult(BaseModel):
+    name: str
+    ok: bool
+    result: Any | None = None
+    error: str | None = None
+    latency_ms: int | None = None
+
+
 class ProjectIn(BaseModel):
     project_dir: str
 

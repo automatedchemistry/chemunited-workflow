@@ -205,6 +205,52 @@ curl http://127.0.0.1:3116/monitoring/recordings/suzuki_batch_2026-01-15T09-30-0
 
 Each variable is polled concurrently using its own per-request timeout, so a hung device only delays its own reading. Recorded readings are stored as JSONL with one entry per tick: `{"tick": 0, "time": "...", "value": ..., "error": null}`.
 
+## Custom routes
+
+The same extensibility shape as [custom sources](#custom-sources), generalized to arbitrary named actions instead of monitored readings — a project can expose functions to the frontend and an LLM without a code change to `chemunited_workflow` itself. Functions are registered in `{project_dir}/customizations/routers/router_hook.py`:
+
+```python
+# customizations/routers/router_hook.py
+CUSTOM_ROUTES: dict[str, Callable[..., Any]] = {
+    "purge_reactor": purge_reactor,
+}
+```
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/custom/discover` | List registered route names, with parameter hints introspected from each function's signature |
+| `POST` | `/custom/{name}` | Call a registered route by name; the request body is passed through as keyword arguments |
+
+The file is optional and reloaded fresh on every call, so edits take effect immediately — no server restart, no "turning monitoring off and on" step needed. Calling an unregistered `name` returns `404`. A raised exception inside the registered function is not a `404`/`500` — it comes back as `{"name", "ok": false, "result": null, "error": "...", "latency_ms": ...}`, the same "the call itself succeeded, the action failed" contract `POST /components/commands/{component}/{command}` already uses for a device command.
+
+A registered function can reach a real device by importing `CustomRouteContext` and reading `CustomRouteContext.platform` — a throwaway `Platform` opened just for that one call and closed once it returns (unlike `MonitoringContext`, which stays open for an entire monitoring poll cycle, this is scoped to a single call and never shared):
+
+```python
+from chemunited_workflow import CustomRouteContext
+
+def purge_reactor(volume_ml: float) -> dict:
+    platform = CustomRouteContext.platform
+    platform["pump"].put("flow_rate", value=volume_ml)
+    return {"status": "ok"}
+```
+
+`CustomRouteContext.platform` is `None` whenever no custom route call is currently in flight. Never call `.close()` or `.register()` on anything reached through it — the caller owns its lifecycle for the call's duration.
+
+Example workflow:
+
+```bash
+# 1. discover what's registered
+curl http://127.0.0.1:3116/custom/discover
+
+# 2. call one, passing kwargs as the request body
+curl -X POST http://127.0.0.1:3116/custom/purge_reactor \
+  -H "Content-Type: application/json" \
+  -d '{"volume_ml": 5.0}'
+# → {"name": "purge_reactor", "ok": true, "result": {"status": "ok"}, "error": null, "latency_ms": 12}
+```
+
+See `examples/custom_project/customizations/routers/` for a full working example.
+
 Visit `/docs` for the interactive Swagger UI, or `/` for the HTML dashboard.
 
 ---

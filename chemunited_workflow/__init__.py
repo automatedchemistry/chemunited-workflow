@@ -19,6 +19,7 @@ from .models import (
     WorkflowNodeSpec,
     WorkflowResult,
 )
+from .custom_route_context import CustomRouteContext
 from .monitoring_context import MonitoringContext
 from .platform import Platform
 from .process import Process
@@ -45,6 +46,7 @@ __all__ = [
     "WorkflowEventType",
     "WorkflowExecutionEvent",
     "MonitoringContext",
+    "CustomRouteContext",
     "WorkflowLogger",
     "configure_terminal_logging",
     "create_run_log_path",
