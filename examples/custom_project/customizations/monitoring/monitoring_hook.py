@@ -38,12 +38,22 @@ def chiller_temperature_f() -> float:
     per-device lock) real-component readings use this ON-cycle, so this
     read shares that lock/connection instead of opening a second one.
     """
-    celsius = MonitoringContext.platform["chiller"].get("temperature")
+    platform = MonitoringContext.platform
+    if platform is None:
+        raise RuntimeError(
+            "No poll cycle running: MonitoringContext.platform is unset."
+        )
+    celsius = platform["chiller"].get("temperature")
     return celsius * 9 / 5 + 32
 
 
 def pre_process_bits() -> list[float]:
-    channels = MonitoringContext.platform["Relay"].get("channels_set_point")
+    platform = MonitoringContext.platform
+    if platform is None:
+        raise RuntimeError(
+            "No poll cycle running: MonitoringContext.platform is unset."
+        )
+    channels = platform["Relay"].get("channels_set_point")
     return [i * 2.4 for i in channels]
 
 
