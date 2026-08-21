@@ -168,7 +168,9 @@ def test_default_build_zip_skips_unknown_filename(tmp_path):
 
 def test_default_build_zip_rejects_path_traversal(tmp_path):
     _make_project(tmp_path)
-    content = default_build_zip(tmp_path, ["../protocols_historic/test_2026-01-01T00-00-00.json"])
+    content = default_build_zip(
+        tmp_path, ["../protocols_historic/test_2026-01-01T00-00-00.json"]
+    )
     with zipfile.ZipFile(io.BytesIO(content)) as zf:
         assert zf.namelist() == []
 
@@ -229,9 +231,7 @@ def test_default_clean_scoped_to_selection(tmp_path):
 def test_default_clean_never_touches_protocols_historic(tmp_path):
     _make_project(tmp_path)
     default_clean(tmp_path, [RUN1_LOG, RUN2_LOG])
-    assert (
-        tmp_path / "protocols_historic" / "test_2026-01-01T00-00-00.json"
-    ).exists()
+    assert (tmp_path / "protocols_historic" / "test_2026-01-01T00-00-00.json").exists()
 
 
 def test_default_clean_skips_unknown_filename(tmp_path):
@@ -242,11 +242,11 @@ def test_default_clean_skips_unknown_filename(tmp_path):
 
 def test_default_clean_rejects_path_traversal(tmp_path):
     _make_project(tmp_path)
-    result = default_clean(tmp_path, ["../protocols_historic/test_2026-01-01T00-00-00.json"])
+    result = default_clean(
+        tmp_path, ["../protocols_historic/test_2026-01-01T00-00-00.json"]
+    )
     assert result == {"deleted": [], "count": 0}
-    assert (
-        tmp_path / "protocols_historic" / "test_2026-01-01T00-00-00.json"
-    ).exists()
+    assert (tmp_path / "protocols_historic" / "test_2026-01-01T00-00-00.json").exists()
 
 
 def test_clean_uses_hook_when_registered(tmp_path):

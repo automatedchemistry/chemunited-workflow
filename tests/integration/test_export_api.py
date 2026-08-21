@@ -186,9 +186,7 @@ def test_clean_deletes_only_selected_run_and_preview_reflects_it(client, project
 
 def test_clean_never_touches_protocols_historic(client, project):
     client.post("/export/clean", json={"logs": [RUN1_LOG, RUN2_LOG]})
-    assert (
-        project["dirs"]["historic_dir"] / "test_2026-01-01T00-00-00.json"
-    ).exists()
+    assert (project["dirs"]["historic_dir"] / "test_2026-01-01T00-00-00.json").exists()
 
 
 def test_clean_uses_custom_hook(client, project):
